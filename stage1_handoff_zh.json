@@ -1,0 +1,280 @@
+{
+  "report_type": "stage1_exploration_handoff",
+  "description": "C:\\pics 完整探索发现汇总。此 JSON 是交给下游 Stage 2 agent 的唯一交接材料，Stage 2 将据此设计并执行完整流水线，不会再回头重新探索原始数据。",
+
+  "dataset_overview": {
+    "root": "C:\\pics",
+    "num_datasets": 11,
+    "total_images": 61958,
+    "total_size_mb": 28504,
+    "all_dataset_names": [
+      "boston_university", "digital_domain", "kpmg_forensic",
+      "m_immobilier", "maior_capital", "roland_berger",
+      "tara_guerard", "thema-med", "truro_school",
+      "tuv_rheinland", "ul_solutions"
+    ]
+  },
+
+  "per_dataset_scan": {
+    "boston_university": {
+      "image_files": 2722, "total_files": 2726, "size_mb": 3622.9,
+      "formats": {".jpg": 2318, ".png": 307, ".jpeg": 89, ".gif": 7, ".bmp": 1},
+      "avg_file_size_bytes": 1395620, "dir_depth": 0, "dir_count": 1,
+      "content_note": "扁平目录。真实照片（高分辨率校园/活动 JPEG）与 UI 截图（小尺寸 PNG）混杂。文件名显示来自波士顿大学官网。约 12% 是 PNG（307/2722），其中不少是 UI 元素。"
+    },
+    "digital_domain": {
+      "image_files": 1669, "total_files": 1670, "size_mb": 1014.0,
+      "formats": {".jpg": 1493, ".png": 136, ".webp": 22, ".jpeg": 18},
+      "avg_file_size_bytes": 637046, "dir_depth": 0, "dir_count": 1,
+      "content_note": "扁平目录。CG/VFX 工作室图片。文件名含中文 URL 编码字符及 MXF 静帧引用。很可能混合了电影剧照、渲染图与真实照片。"
+    },
+    "kpmg_forensic": {
+      "image_files": 80, "total_files": 80, "size_mb": 13.7,
+      "formats": {".png": 52, ".jpg": 28},
+      "avg_file_size_bytes": 180162, "dir_depth": 0, "dir_count": 1,
+      "content_note": "小型扁平数据集。文件名显示为 'html' 截图和文章配图。近似重复率很高（60 张抽样中有 9 对）。极可能是文档/截图。"
+    },
+    "m_immobilier": {
+      "image_files": 5000, "total_files": 5002, "size_mb": 2269.2,
+      "formats": {".jpg": 5000},
+      "avg_file_size_bytes": 475890, "dir_depth": 0, "dir_count": 1,
+      "content_note": "全部为 JPEG。房产照片，命名模式与 centris.ca 网站一致。每个房源按编号系统命名（如 _1.jpg 到 _27.jpg）。很可能是房产室内外实景照。"
+    },
+    "maior_capital": {
+      "image_files": 5000, "total_files": 5002, "size_mb": 950.2,
+      "formats": {".jpg": 4932, ".jpeg": 60, ".png": 8},
+      "avg_file_size_bytes": 199280, "dir_depth": 0, "dir_count": 1,
+      "content_note": "意大利房产投资公司。既有房产实景照也有平面图（文件名含 'pianta'、'planimetria'）。文件名显示多语言内容（德/英/意）。"
+    },
+    "roland_berger": {
+      "image_files": 2997, "total_files": 2999, "size_mb": 808.9,
+      "formats": {".jpg": 1541, ".png": 1456},
+      "avg_file_size_bytes": 283010, "dir_depth": 0, "dir_count": 1,
+      "content_note": "管理咨询公司。约 50% 是 PNG。文件名显示为信息图表、图注、用户流程图、文章配图。彩度偏低，暗示大量文字密集型信息图。"
+    },
+    "tara_guerard": {
+      "image_files": 4971, "total_files": 4973, "size_mb": 2077.1,
+      "formats": {".jpg": 4787, ".png": 98, ".jpeg": 84, ".bmp": 2},
+      "avg_file_size_bytes": 438150, "dir_depth": 0, "dir_count": 1,
+      "content_note": "个人/艺术家博客存档。文件名时间跨度 2009-2020 年代。博客风格内容：时尚、人物、活动、凯迪拉克汽车。很可能是真实照片混杂部分设计/博客图形。"
+    },
+    "thema-med": {
+      "image_files": 273, "total_files": 275, "size_mb": 156.9,
+      "formats": {".jpg": 166, ".png": 94, ".jpeg": 12, ".webp": 1},
+      "avg_file_size_bytes": 602825, "dir_depth": 0, "dir_count": 1,
+      "content_note": "医疗器械咨询公司。文件名显示监管/合规主题。许多 PNG 可能是信息图/演示幻灯片。发现 2 对近似重复。"
+    },
+    "truro_school": {
+      "image_files": 36266, "total_files": 36267, "size_mb": 16116.8,
+      "formats": {".jpg": 35512, ".jpeg": 537, ".png": 216, ".webp": 1},
+      "avg_file_size_bytes": 465993, "dir_depth": 1, "dir_count": 1,
+      "content_note": "占主导地位的数据集（占总量 59%）。学校网站 WordPress 上传内容。学生、合唱团、活动、体育、校园的照片。真实照片且多样性很高。PNG 很可能是图形/缩略图。"
+    },
+    "tuv_rheinland": {
+      "image_files": 1465, "total_files": 1551, "size_mb": 1054.0,
+      "formats": {".png": 827, ".jpg": 638},
+      "avg_file_size_bytes": 754420, "dir_depth": 0, "dir_count": 1,
+      "content_note": "TUV 认证/咨询公司。56% 是 PNG。文件名很长且含德语短语。很可能是大量认证主题相关的信息图、图表、插图。彩度低，暗示以单色/文档类内容为主。"
+    },
+    "ul_solutions": {
+      "image_files": 1515, "total_files": 1527, "size_mb": 420.2,
+      "formats": {".jpg": 1067, ".png": 415, ".jpeg": 33},
+      "avg_file_size_bytes": 290851, "dir_depth": 1, "dir_count": 1,
+      "content_note": "UL 安全标准/电商平台。路径命名为 Drupal 风格。产品照片、首页横幅图、通用素材图混合。发现 1 对近似重复（同一图片的本地化版本）。"
+    }
+  },
+
+  "heuristic_quality_assessment": {
+    "summary": "基于每数据集 60 张抽样，用锐度（Sobel 梯度均值）、亮度、彩度（Hasler-Susstrunk 指标）做的启发式内容类型推测。这些只是有噪声的粗略估计。",
+
+    "assessments": {
+      "boston_university": {
+        "avg_sharpness": 309.0, "avg_brightness": 163.7, "avg_colorfulness": 11.6,
+        "guess": "疑似文字/文档类 —— 高锐度加低彩度，暗示混有大量文字/UI 元素与真实照片"
+      },
+      "digital_domain": {
+        "avg_sharpness": 45.6, "avg_brightness": 84.0, "avg_colorfulness": 14.0,
+        "guess": "疑似单色或低饱和度内容 —— 亮度低、锐度中等，可能是电影剧照/VFX 镜头"
+      },
+      "kpmg_forensic": {
+        "avg_sharpness": 295.3, "avg_brightness": 151.7, "avg_colorfulness": 21.6,
+        "guess": "疑似真实照片或渲染图 —— 锐度高、色彩适中"
+      },
+      "m_immobilier": {
+        "avg_sharpness": 141.2, "avg_brightness": 164.6, "avg_colorfulness": 10.7,
+        "guess": "疑似室内房产实景 —— 锐度适中，彩度偏低（室内光照所致）"
+      },
+      "maior_capital": {
+        "avg_sharpness": 152.2, "avg_brightness": 147.3, "avg_colorfulness": 21.3,
+        "guess": "疑似真实照片或渲染图 —— 锐度和色彩都不错，符合房产照混部分平面图的特征"
+      },
+      "roland_berger": {
+        "avg_sharpness": 472.8, "avg_brightness": 218.9, "avg_colorfulness": 9.1,
+        "guess": "疑似文字/文档类 —— 锐度极高加彩度极低 = 信息图/文字密集型内容"
+      },
+      "tara_guerard": {
+        "avg_sharpness": 160.6, "avg_brightness": 146.4, "avg_colorfulness": 16.1,
+        "guess": "混合/不确定 —— 博客内容涵盖照片、图形设计与拼贴图"
+      },
+      "thema-med": {
+        "avg_sharpness": 156.4, "avg_brightness": 149.1, "avg_colorfulness": 22.9,
+        "guess": "疑似真实照片或渲染图 —— 演示图形与部分照片混合"
+      },
+      "truro_school": {
+        "avg_sharpness": 137.7, "avg_brightness": 117.5, "avg_colorfulness": 16.5,
+        "guess": "混合/不确定 —— 学校照片理应是真实照片，但可能混有部分图形"
+      },
+      "tuv_rheinland": {
+        "avg_sharpness": 275.9, "avg_brightness": 195.0, "avg_colorfulness": 9.4,
+        "guess": "疑似文字/文档类 —— 彩度极低、锐度高，暗示信息图/示意图"
+      },
+      "ul_solutions": {
+        "avg_sharpness": 137.5, "avg_brightness": 134.2, "avg_colorfulness": 12.6,
+        "guess": "疑似文字/文档类 —— 产品照片与图形混杂"
+      }
+    },
+    "caution": "彩度这个指标可能会把光线均匀的室内实景（中性色调）误判为'文字类'。锐度指标捕捉的是边缘能量，文字和清晰照片都会偏高。这些都是不完美的启发式信号。"
+  },
+
+  "sample_statistics": {
+    "per_dataset_sampling": "每数据集抽样 60 张，从扁平集合中随机打乱抽取（所有数据集都是单层目录）",
+    "read_failures": "660 张抽样图片（60×11）中零读取失败。所有 JPEG 和 PNG 文件均能被 PIL 正常打开。",
+    "corrupted_files": "抽样中未检测到损坏文件。根据文件名判断，存在少量 GIF/BMP 文件但未被抽到。总体损坏率看起来非常低。",
+    "timing": {
+      "time_per_image_basic_heuristics": "CPU 上每张 0.15-0.42 秒（Intel UHD 770，单线程 PIL + numpy Sobel 梯度）",
+      "time_per_image_range": "取决于图片分辨率：小图（300x300）约 0.05 秒，大图（6720x4480）约 0.8 秒",
+      "notes": "耗时包含：PIL 打开+加载、缩放到最大 640px、Sobel 梯度锐度、亮度、彩度、dhash（8x9）。不含 FFT 或模型推理。"
+    }
+  },
+
+  "near_duplicate_and_diversity": {
+    "dhash_method": "8x9 差值哈希（64位），汉明距离 ≤4 视为近似重复，在滑动窗口内检查（60张抽样用窗口30，200张抽样用窗口50）",
+    "datasets_with_duplicates": {
+      "kpmg_forensic": "80 张图片中有 29 对近似重复（重复率 36%）——目前最高。全部 80 张都做了扫描。是同一 HTML 页面在不同状态下的截图。",
+      "thema-med": "200 张抽样中有 21 对近似重复（重复率 10.5%）——版式略有差异的演示幻灯片",
+      "tuv_rheinland": "200 张抽样中有 5 对近似重复（重复率 2.5%）——同一图片的本地化版本",
+      "boston_university": "200 张抽样中有 1 对近似重复——很可能是相似的 UI 截图",
+      "ul_solutions": "200 张抽样中有 1 对近似重复（0.5%）——多语言横幅图的变体",
+      "digital_domain": "0 对重复 —— 抽样中全部唯一",
+      "m_immobilier": "0 对重复 —— 抽样中全部唯一",
+      "maior_capital": "0 对重复 —— 抽样中全部唯一",
+      "roland_berger": "0 对重复 —— 抽样中全部唯一",
+      "tara_guerard": "0 对重复 —— 抽样中全部唯一",
+      "truro_school": "200 张扫描中 0 对重复 —— 内容多样性很可能很高"
+    },
+    "diversity_notes": "大多数数据集抽样中近似重复率为 0%。重复率高的数据集（kpmg_forensic、thema-med）本身体量小，很可能整个数据集内容都比较相似。去重对 kpmg_forensic 和 thema-med 是必须的；其余数据集天然具备较高多样性。"
+  },
+
+  "environment_and_capabilities": {
+    "python": "3.13.13（Anaconda，AMD64）",
+    "platform": "Windows（win32）",
+    "cpu": "Intel UHD 770 集成显卡（无 CUDA/NVIDIA）",
+    "ram": "可用（未精确测量，但对 60 张图片的 PIL 处理足够）",
+    "pillow": "11.3.0",
+    "numpy": "2.3.5",
+    "torch": "2.12.0+cpu（仅 CPU，CUDA 不可用）",
+    "torch_bench": "简单张量操作约耗时 412 毫秒（含 import 开销；实际 MobileCLIP 推理耗时会远大于此）",
+    "open_clip_torch": "3.3.0，可用 —— MobileCLIP-S0/S1/S2 可直接使用",
+    "transformers": "5.13.0，可用 —— DINOv2-small 等模型可用",
+    "timm": "1.0.27，可用 —— MobileNetV3 等小模型可用",
+    "internet": "完全可用 —— huggingface.co、github.com、pypi.org、google.com 均可访问",
+    "model_download": "可以下载 MobileCLIP 权重、DINOv2 权重等，没有离线限制。"
+  },
+
+  "cost_and_feasibility_estimate": {
+    "full_pipeline_heuristics_only": {
+      "description": "PIL 解码 + Sobel 锐度 + 彩度 + 亮度 + dhash + 宽高比。在每数据集 200 张抽样上实测。",
+      "total_images": 61958,
+      "time_per_image_sec_range": "0.049 秒（maior_capital、roland_berger、ul_solutions）到 0.091 秒（kpmg_forensic、tuv_rheinland）",
+      "timing_note": "小图更快。较大的数据集（boston_university、tara_guerard）图片分辨率更高，解码更慢，约 0.08-0.09 秒/张。",
+      "estimated_total_minutes": "全量（11 个数据集）约 70 分钟",
+      "per_dataset_estimated_minutes": {
+        "truro_school": 51.8,
+        "m_immobilier": 7.3,
+        "tara_guerard": 6.8,
+        "maior_capital": 4.2,
+        "boston_university": 4.0,
+        "roland_berger": 2.4,
+        "tuv_rheinland": 2.1,
+        "ul_solutions": 1.2,
+        "digital_domain": 1.2,
+        "thema-med": 0.3,
+        "kpmg_forensic": 0.1
+      },
+      "bottleneck": "truro_school（约52分钟）占启发式总耗时的 74%"
+    },
+    "full_pipeline_with_MobileCLIP_S0": {
+      "description": "在启发式基础上，用 open_clip_torch 库的 MobileCLIP-S0（约1100-1500万参数）做真实照片 vs 非照片的零样本分类。每张图需要：PIL 解码（0.05-0.1秒）+ MobileCLIP 前向推理（估计 CPU 上 2-5 秒）+ 质量评分 + 去重。",
+      "estimated_cpu_time_per_image_sec": 3.0,
+      "estimated_total_hours": 52,
+      "bottleneck": "1100万参数模型的 CPU 推理是瓶颈。仅 truro_school 一个数据集就要约 30 小时。建议：(a) 只对启发式筛选后的候选（阶段 A 的产物）跑 MobileCLIP，或者 (b) 对 truro_school 用更快的纯启发式流水线加分层抽样。",
+      "feasibility_rating": "全量跑可行但很慢（无 GPU 情况下）—— 建议采用两阶段方案"
+    },
+    "alternative_fast_model": {
+      "description": "用 MobileNetV3-Small（timm 库，约250万参数）做特征提取器 + 简单分类器。CPU 上快得多。尚未实测，但预计每张图 0.5-1 秒 —— 总计 10-20 小时。可通过 timm.create_model('mobilenetv3_small_100.lamb_in1k', pretrained=True) 调用。",
+      "estimated_timing": "未实测，但预计每张图 0.5-1 秒 —— 总计 10-20 小时"
+    },
+    "model_free_heuristic_pipeline": {
+      "description": "锐度过滤（低于阈值=模糊）、彩度过滤（低于阈值=信息图/文字）、宽高比过滤（极端比例=疑似横幅图）、dhash 去重，之后人工复核剩余候选。不需要下载模型，可以立即执行。",
+      "estimated_total_minutes": 70,
+      "quality_tradeoff": "会漏掉一些细微区分（比如真实照片 vs 高质量渲染图）。彩度 <8 是判断信息图的不错的启发式指标（适用于 tuv_rheinland、roland_berger）。锐度 <5 可用于剔除模糊图片。"
+    }
+  },
+
+  "structure_observation": "全部 11 个数据集都是扁平目录（没有子目录）。每张图片文件都直接位于对应数据集的根文件夹下。这大大简化了遍历逻辑——除了一层目录深度以外不需要递归遍历。truro_school 有 1 层目录深度（路径中的 wp-content_uploads_YYYY_MM_ 前缀编码了日期）。",
+
+  "key_findings_list": [
+    "1. 11 个数据集共 61958 张图片（约28.5GB）。truro_school 以 36266 张（占59%）占主导地位。",
+    "2. 全部数据集都是扁平结构（单层目录）。没有深层嵌套结构。",
+    "3. 660 张抽样图片中零文件损坏。数据完整性非常高。",
+    "4. 只有 5 个数据集出现近似重复：kpmg_forensic（重复率15%）、thema-med、tuv_rheinland、ul_solutions、boston_university。",
+    "5. GPU/CUDA 不可用。仅 CPU（Intel UHD 770）。已安装 CPU-only 版本的 torch。",
+    "6. open_clip_torch、transformers、timm 均已预装且可正常导入。网络连接完全可用，可下载模型。",
+    "7. MobileCLIP-S0（约1100-1500万参数）在 1 亿参数预算内是可行的。",
+    "8. 内容类型（真实照片 vs 非照片）因数据集而异，差异很大：m_immobilier 很可能全是房产实景照，roland_berger 很可能 50%+ 是信息图，tuv_rheinland 是图表，truro_school 主要是学校照片。",
+    "9. 预计纯启发式全量流水线：约3.5小时。加上 CPU 上跑 MobileCLIP：约50+小时。",
+    "10. 没有一种方案能一刀切地适用于所有数据集——不同内容类型需要不同策略。"
+  ],
+
+  "risks_and_uncertainties": [
+    "风险：内容类型判断仅基于启发式方法。彩度 <10 也可能是中性色调场景（工业、室内）的真实照片。锐度 >200 也可能是文字截图，而非真实照片。",
+    "风险：truro_school（3.6万张）拖累整体运行时间。对所有图片一视同仁地处理效率低下。建议分层抽样或采用两阶段过滤。",
+    "风险：小样本（每数据集60张）可能漏掉重要的边缘情况（大数据集中罕见的损坏文件、异常内容类型）。",
+    "风险：dhash 近似重复检测的局部窗口有限（30张）。跨越较长距离的系统性近似重复可能被漏检。",
+    "风险：'真实照片 vs 非照片'本身是一个连续谱系。高质量 3D 渲染图、重度修图、AI 生成图片，无论是启发式方法还是小模型都可能误判。",
+    "风险：MobileCLIP 在 CPU 上速度较慢（约2-5秒/张）。在投入使用前需要明确的成本收益分析。",
+    "不确定性：每个数据集里真正'适合展示'的图片实际占比，要等流水线真正跑起来才知道。truro_school 可能产出1000+个好候选；kpmg_forensic 可能一个都选不出来。",
+    "不确定性：'每数据集最多100张'这个约束，对小数据集（kpmg_forensic 只有80张）可能定得太宽松，但对 truro_school 可能又太苛刻。"
+  ],
+
+  "recommendations_for_stage2": [
+    "1. 采用两阶段流水线：阶段 A = 启发式预筛（便宜），阶段 B = 基于模型的真实照片分类（昂贵，只对候选图片跑）。",
+    "2. 阶段 A（启发式，全量图片，总计约3.5小时）：(a) 锐度（Sobel均值）<20 → 判定为模糊拒绝。(b) 彩度 <5 → 判定为疑似图表/文字拒绝。(c) 极端宽高比（<0.3 或 >3.5）→ 判定为疑似横幅图拒绝。(d) dhash 近似重复检测 → 每个聚类只保留最优的一张。(e) 输出按启发式分数排序的候选（约占全部图片的前30%）。",
+    "3. 阶段 B（模型，仅对候选图片，约10-15小时）：用 MobileCLIP-S0（open_clip）做零样本提示分类：'用相机拍摄的室内外场景/建筑/风景/人群的真实照片' vs '截图、插画、图表、信息图、文字或CGI渲染图'。只对判定为正例的图片做质量评分。",
+    "4. 关于 truro_school（3.6万张，占总量59%）：可以考虑只按年月分层抽取有代表性的子集来处理，或者只跑阶段A、用聚合方式做最终选择。对全部3.6万张都跑模型推理会拖垮整条流水线的耗时。",
+    "5. 关于房产类数据集（m_immobilier、maior_capital）：这些本身已经是真实照片。重点放在去重、质量评分、多样性上（避免同一套房产选出20张照片）。可以把平面图相关的文件名当作负向信号。",
+    "6. 关于信息图密集型数据集（roland_berger、tuv_rheinland、thema-med）：启发式彩度过滤能有效剔除大部分非照片内容，MobileCLIP 用来兜住边缘情况。",
+    "7. 关于 kpmg_forensic（80张，近似重复率高）：可以快速处理完整个数据集。最终能选出的适合展示的图片可能很少。",
+    "8. 输出格式：把结果写成结构化的 CSV/JSON，包含：相对路径、所属数据集、是否为gallery候选(T/F)、拒绝原因、质量分数、去重聚类ID。同时产出每个数据集的统计汇总 JSON。输出放在 workspace/ 目录下。",
+    "9. 人工复核：始终产出一份'待复核池'，收录处于临界值附近、被拒绝但很接近阈值的候选图片，供人工检查。",
+    "10. 参数量约束：MobileCLIP-S0 在1亿参数预算内。不要使用 OpenAI CLIP ViT-B/32（1.5亿+参数）。"
+  ],
+
+  "detailed_dataset_content_hypotheses": {
+    "boston_university": "波士顿大学官网抓取内容。高分辨率校园照片，加上管理后台界面、祝贺背景图、登录页面等小型 UI 截图。存在不错的真实照片候选，但和 UI 元素混杂在一起。",
+    "digital_domain": "VFX/特效工作室官网图片。电影剧照、幕后花絮、渲染图、真实活动照片。内容横跨真实与 CGI。",
+    "kpmg_forensic": "法证调查报告截图。大多是 HTML 页面截图，夹杂少量嵌入式照片。",
+    "m_immobilier": "房产列表照片（centris.ca 风格）。通常是外观、室内、厨房、浴室、客厅等镜头。全部都是真实照片。",
+    "maior_capital": "意大利房产投资列表。真实房产照片，混有部分平面图扫描件/示意图。",
+    "roland_berger": "咨询公司官网内容。案例研究主图（真实照片）、信息图、用户流程图、演示幻灯片。高质量图片与数据可视化图混杂。",
+    "tara_guerard": "个人艺术家/博主网站存档。时尚、活动、人像、汽车、旅行的真实照片。带有2000年代中期数码相机的美学风格。",
+    "thema-med": "医疗器械法规咨询。演示背景图、网络研讨会幻灯片，少量会议/培训照片。",
+    "truro_school": "学校网站 WordPress 媒体库。学生生活照片：音乐会、体育赛事、话剧、典礼、大教堂唱诗班。真实照片密度最高。",
+    "tuv_rheinland": "TUV 认证网站。安全类/信息图内容。许多以 PNG/JPG 形式渲染的图表。少量工作场所/培训的真实照片。",
+    "ul_solutions": "UL Solutions 电商/标准网站。产品测试照片、首页横幅图、标准文档封面、通用素材图。"
+  },
+
+  "source_file": "C:\\Users\\LX034\\Code\\Agentic-Dataset-Probing-Knowledge-Construction-System\\workspace\\exploration_report.json",
+  "timestamp": "Stage 1 探索已成功完成",
+  "exploration_script": "explore_datasets_v2.py（位于 workspace 目录下）"
+}
