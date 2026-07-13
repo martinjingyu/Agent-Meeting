@@ -56,6 +56,7 @@ from .storage import (
     load_turn_cache,
     meeting_exists,
     new_meeting_id,
+    participant_workspace_dir,
     save_meeting,
     save_turn_cache,
     sessions_dir,
@@ -296,6 +297,13 @@ def _execute_turn(
     recorder.available_tools = sorted(registry.names)
 
     session_path = sessions_dir(meeting_id) / f"{participant.name}_r{round_num}.json"
+    # Role-backed participants get a private, persistent workspace (roles/<name>/
+    # workspace/, alongside memory.md -- carries across meetings). Ad-hoc participants
+    # get a private but ephemeral one, scoped to this meeting only. Either way, no two
+    # participants ever share a workspace_root -- workspace_root() is thread-local in
+    # research_agent.paths, so concurrent participants setting different overrides here
+    # don't race each other.
+    workspace_root = role.workspace_path if role else participant_workspace_dir(meeting_id, participant.name)
 
     agent = GeneralAgent(
         model=model,
@@ -308,6 +316,7 @@ def _execute_turn(
         sub_agent=True,
         agent_role="participant",
         extra_runtime=extra_runtime,
+        workspace_root=workspace_root,
     )
     agent.llm = LoggingLLMClient(agent.llm, recorder, ui)
 

@@ -23,6 +23,15 @@ def sessions_dir(meeting_id: str) -> Path:
     return path
 
 
+def participant_workspace_dir(meeting_id: str, participant_name: str) -> Path:
+    """Private workspace for an ad-hoc (non-role_ref) participant -- ephemeral, tied
+    to this one meeting (unlike a role's own persistent roles/<name>/workspace/,
+    since an ad-hoc participant has no identity that carries across meetings)."""
+    path = RUNS_DIR / meeting_id / "workspace" / participant_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def save_meeting(data: dict[str, Any]) -> Path:
     path = meeting_path(data["meeting_id"])
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
