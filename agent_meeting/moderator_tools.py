@@ -1,6 +1,6 @@
 """Stateful, meeting-local tools for the moderator in mode="moderator".
 
-Unlike round_tools.py/research_agent.tools.roles (stateless handlers reading from the
+Unlike round_tools.py/agent_meeting.role_tools (stateless handlers reading from the
 per-run `runtime` dict, registered once into the shared global registry), these are
 closures over one meeting's own mutable state (roster, notes, agenda, steps) -- each
 call to build_moderator_tools() gets its own fresh ToolRegistry + state dict, since a
@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from research_agent import roles as roles_api
 from research_agent.tools import load_builtin_tools, registry as global_registry
 from research_agent.tools.registry import ToolRegistry, json_result
-from research_agent.tools.roles import register_role_tools
 
+from . import roles as roles_api
 from .config import MeetingConfig, ParticipantConfig
+from .role_tools import register_role_tools
 from .trajectory import summarize_turn_actions
 
 

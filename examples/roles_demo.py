@@ -12,9 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from research_agent import roles as roles_api
-
-from agent_meeting import MeetingConfig, ParticipantConfig, run_meeting
+from agent_meeting import MeetingConfig, ParticipantConfig, roles as roles_api, run_meeting
 
 
 def ensure_roles() -> None:

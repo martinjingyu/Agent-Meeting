@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from research_agent.tools import load_builtin_tools, registry
 from research_agent.tools.registry import ToolRegistry
-from research_agent.tools.roles import register_role_tools
 
+from .role_tools import register_role_tools
 from .round_tools import register_round_tools
 
 KANBAN_TOOL_NAMES: set[str] = {

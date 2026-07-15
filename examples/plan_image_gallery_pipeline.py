@@ -41,6 +41,22 @@ Executor 执行的方案。你不需要（也不应该）跑完整的 61958 张�
 请在你的专长范围内给出具体、可论证的设计（不是泛泛而谈），并在最后给出一个可以
 写进最终方案里的结论段落。
 
+=== 会议硬约束：Stage 1 先验的使用边界 ===
+下面的 Stage 1 探索结果只允许用于：
+* 估算规模、成本、运行时间、候选池大小和 QA 抽样量。
+* 识别需要重点复核的风险区域。
+* 选择可配置的初始阈值或 dry-run 校准点。
+* 设计输出统计、日志和人工复核包。
+
+下面的 Stage 1 探索结果不允许用于：
+* 直接判断某张图、某个数据集或某类文件是否适合 gallery。
+* 写死 dataset name 特例，例如“某数据集跳过模型/必然全是真实照片”。
+* 使用文件名、路径、目录名、来源描述、时间、EXIF 或 content_note 作为视觉适配性依据。
+* 把少量样本观察升级成通用硬规则。
+
+如果你提出任何基于当前数据分布的策略，必须标注为“可配置默认值/风险提示/成本规划”，
+不能写成不可违反的 suitability 规则。
+
 === 任务原始要求 ===
 {task_spec}
 
@@ -63,14 +79,40 @@ def main() -> None:
     config = MeetingConfig(
         question=build_question(),
         participants=[
-            ParticipantConfig(name="VisionCriteria", role_ref="vision-criteria-planner", max_iterations=15),
-            ParticipantConfig(name="CPUPipeline", role_ref="cpu-pipeline-planner", max_iterations=15),
-            ParticipantConfig(name="DiversityRanking", role_ref="diversity-ranking-planner", max_iterations=15),
-            ParticipantConfig(name="GalleryCurator", role_ref="gallery-display-curator", max_iterations=15),
-            ParticipantConfig(name="Skeptic", role_ref="skeptic-reviewer", max_iterations=15),
+            ParticipantConfig(
+                name="VisionCriteria",
+                role="Visual-only criteria and boundary-case rubric",
+                role_ref="vision-criteria-planner",
+                max_iterations=15,
+            ),
+            ParticipantConfig(
+                name="CPUPipeline",
+                role="Windows CPU execution, dependency, and runtime planner",
+                role_ref="cpu-pipeline-planner",
+                max_iterations=15,
+            ),
+            ParticipantConfig(
+                name="DiversityRanking",
+                role="Deduplication, similarity, ranking, and diversity planner",
+                role_ref="diversity-ranking-planner",
+                max_iterations=15,
+            ),
+            ParticipantConfig(
+                name="GalleryCurator",
+                role="Gallery display quality, review package, and human QA planner",
+                role_ref="gallery-display-curator",
+                max_iterations=15,
+            ),
+            ParticipantConfig(
+                name="Skeptic",
+                role="Constraint auditor with veto over unsupported or invalid plan items",
+                role_ref="skeptic-reviewer",
+                max_iterations=15,
+            ),
         ],
-        aggregation_strategy="llm",
-        rounds=5,
+        aggregation_strategy="audited_llm",
+        final_audit=True,
+        rounds=4,
     )
     result = run_meeting(config, resume=resume)
 
@@ -84,7 +126,8 @@ def main() -> None:
             continue
         for turn in step["turns"]:
             changes = turn.get("changes_from_prior_round")
-            header = f"{turn['agent']} ({turn['role_ref']}) -- round {turn['round']}"
+            role_ref = turn.get("role_ref") or turn.get("role") or turn.get("strategy") or "n/a"
+            header = f"{turn['agent']} ({role_ref}) -- round {turn['round']}"
             if changes:
                 header += f"\n[changes from prior round] {changes}"
             print(f"\n{'=' * 20} {header} {'=' * 20}\n{turn['output']}")

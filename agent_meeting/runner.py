@@ -46,9 +46,9 @@ import json
 from datetime import datetime
 from typing import Any, Callable
 
-from research_agent import roles as roles_api
 from research_agent.agent import GeneralAgent
 
+from . import roles as roles_api
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig
 from .storage import (
@@ -60,6 +60,7 @@ from .storage import (
     save_meeting,
     save_turn_cache,
     sessions_dir,
+    shared_dir,
 )
 from .tools_setup import build_participant_registry
 from .trajectory import LoggingLLMClient, TrajectoryUI, TurnRecorder, iso, log, now, summarize_turn_actions
@@ -293,6 +294,15 @@ def _execute_turn(
         provider = participant.provider
         max_iterations = participant.max_iterations
 
+    meeting_shared_dir = shared_dir(meeting_id)
+    system_prompt += (
+        f"\n\nShared meeting files: {meeting_shared_dir} is a shared directory for this "
+        "meeting. You may read and write files there to intentionally share material "
+        "with other participants (e.g. a source document, or a result you want others "
+        "to build on). Files in your own workspace stay private -- only put something "
+        "there if you want other participants to see it."
+    )
+
     registry = build_participant_registry(role_backed=role is not None, round_aware=round_aware)
     recorder.available_tools = sorted(registry.names)
 
@@ -317,6 +327,7 @@ def _execute_turn(
         agent_role="participant",
         extra_runtime=extra_runtime,
         workspace_root=workspace_root,
+        shared_roots=[meeting_shared_dir],
     )
     agent.llm = LoggingLLMClient(agent.llm, recorder, ui)
 
@@ -470,7 +481,59 @@ def _run_parallel_qa(
         if checkpoint is not None:
             checkpoint(all_steps)
 
+    if config.final_audit and aggregated_plan is not None:
+        audit_step = _run_final_audit(config, meeting_id, aggregated_plan)
+        all_steps.append(audit_step)
+        for i, step in enumerate(all_steps):
+            step["step_index"] = i
+        if checkpoint is not None:
+            checkpoint(all_steps)
+
     return all_steps
+
+
+def _run_final_audit(
+    config: MeetingConfig,
+    meeting_id: str,
+    draft_plan: str,
+) -> dict[str, Any]:
+    if config.verbose:
+        log("meeting", "final audit: checking last aggregated plan against constraints...")
+
+    audit_start = now()
+    audit = aggregate_responses(
+        config.question,
+        [{"agent": "__draft_plan__", "role": "last aggregation", "output": draft_plan}],
+        strategy="final_audit_llm",
+        model=config.aggregation_model,
+        provider=config.aggregation_provider,
+    )
+    audit_end = now()
+
+    if config.verbose:
+        log("meeting", f"final audit: done in {int((audit_end - audit_start).total_seconds())}s")
+
+    return {
+        "step_index": None,
+        "step_start": iso(audit_start),
+        "step_end": iso(audit_end),
+        "decided_by": "config",
+        "trigger_reason": "final constraint/evidence audit",
+        "turns": [
+            {
+                "turn_id": f"trn_final_audit_{meeting_id}",
+                "agent": "__final_auditor__",
+                "decided_by": "config",
+                "round": "final_audit",
+                "strategy": audit["strategy"],
+                "input": audit["prompt"],
+                "output": audit["output"],
+                "start_time": iso(audit_start),
+                "end_time": iso(audit_end),
+                "duration_ms": int((audit_end - audit_start).total_seconds() * 1000),
+            }
+        ],
+    }
 
 
 def _moderator_system_prompt(config: MeetingConfig) -> str:

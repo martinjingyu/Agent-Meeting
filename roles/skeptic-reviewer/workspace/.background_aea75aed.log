@@ -1,0 +1,3 @@
+torch: 2.12.0+cpu
+CUDA: False
+python: 3.13.13 | packaged by Anaconda, Inc. | (main, Apr 14 2026, 06:12:50) [MSC v.1942 64 bit (AMD64)]

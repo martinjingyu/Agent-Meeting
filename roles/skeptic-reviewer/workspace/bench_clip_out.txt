@@ -1,0 +1,9 @@
+Number of prompts: 10
+Text feature extraction: 2.094s
+Text feature shape: torch.Size([10, 512])
+Zero-shot P(real): 0.4848, P(non-real): 0.5152
+Zero-shot classification time: 0.830s
+
+Real image: wp-content_uploads_2015_05_finn-hawkins-windsurfing.jpg, size=(1000, 677)
+Real image avg inference (10 runs): 1.2236s
+Min: 0.5493s, Max: 3.6795s

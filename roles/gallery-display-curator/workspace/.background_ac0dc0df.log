@@ -1,0 +1,10 @@
+ERROR:root:Pretrained tag or path (datacompdr_lt_256) for 'MobileCLIP2-S0' not found. Available tags: ['dfndr2b']
+MobileCLIP2-S0: ERROR loading - Pretrained value 'datacompdr_lt_256' is not a known tag or valid file path
+ERROR:root:Pretrained tag or path (datacompdr_lt_256) for 'MobileCLIP2-S2' not found. Available tags: ['dfndr2b']
+MobileCLIP2-S2: ERROR loading - Pretrained value 'datacompdr_lt_256' is not a known tag or valid file path
+ERROR:root:Pretrained tag or path (datacompdr_lt_256) for 'MobileCLIP-S1' not found. Available tags: ['datacompdr']
+MobileCLIP-S1: ERROR loading - Pretrained value 'datacompdr_lt_256' is not a known tag or valid file path
+ERROR:root:Pretrained tag or path (datacompdr_lt_256) for 'MobileCLIP-S2' not found. Available tags: ['datacompdr']
+MobileCLIP-S2: ERROR loading - Pretrained value 'datacompdr_lt_256' is not a known tag or valid file path
+ERROR:root:Pretrained tag or path (datacompdr_lt_256) for 'MobileCLIP-B' not found. Available tags: ['datacompdr', 'datacompdr_lt']
+MobileCLIP-B: ERROR loading - Pretrained value 'datacompdr_lt_256' is not a known tag or valid file path

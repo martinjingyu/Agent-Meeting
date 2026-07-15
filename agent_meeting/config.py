@@ -13,7 +13,7 @@ class ParticipantConfig:
     provider: str | None = None
     max_iterations: int = 8
     role_ref: str | None = None
-    """Name of a stored role (research_agent.roles) to pull in instead of the ad-hoc
+    """Name of a stored role (agent_meeting.roles) to pull in instead of the ad-hoc
     fields above. When set, name/role/skills/system_prompt are ignored -- the role's
     own DEFINITION.md + persistent memory drive the participant's identity, and
     model/provider/max_iterations fall back to the role's own frontmatter defaults
@@ -38,7 +38,7 @@ class ParticipantConfig:
 class ModeratorConfig:
     name: str = "Moderator"
     role_ref: str | None = None
-    """The moderator can itself be a stored role (research_agent.roles), same as a
+    """The moderator can itself be a stored role (agent_meeting.roles), same as a
     participant -- if set, system_prompt/model/provider below are ignored in favor of
     the role's own definition/defaults, mirroring ParticipantConfig.role_ref."""
     system_prompt: str | None = None
@@ -58,6 +58,10 @@ class MeetingConfig:
     aggregation_strategy: str = "llm"
     aggregation_model: str | None = None
     aggregation_provider: str | None = None
+    final_audit: bool = False
+    """When True, run one final constraint-and-evidence audit over the last
+    aggregated answer. This is useful for planning meetings where consensus can
+    accidentally amplify an invalid assumption."""
     rounds: int = 1
     verbose: bool = True
     """Print progress lines to stdout while the meeting runs (per-participant

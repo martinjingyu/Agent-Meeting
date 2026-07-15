@@ -32,6 +32,18 @@ def participant_workspace_dir(meeting_id: str, participant_name: str) -> Path:
     return path
 
 
+def shared_dir(meeting_id: str) -> Path:
+    """The one explicit, opt-in area every participant in this meeting can read AND
+    write via the file tools (research_agent's shared_roots mechanism), in addition
+    to their own private workspace. Meant for deliberate sharing -- e.g. attaching a
+    source document for everyone, or one participant publishing a result for others
+    to build on -- never for participants to browse each other's private workspaces
+    or leftover files from older meeting runs, which stay off-limits."""
+    path = RUNS_DIR / meeting_id / "shared"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def save_meeting(data: dict[str, Any]) -> Path:
     path = meeting_path(data["meeting_id"])
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

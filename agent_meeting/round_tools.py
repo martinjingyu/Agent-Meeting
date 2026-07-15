@@ -8,7 +8,7 @@ stronger constraint than asking for a summary in prose: function-call schema
 validation, not a hope that the model remembers to include something.
 
 Registered into the same global research_agent.tools.registry singleton that
-build_participant_registry() filters from (mirrors research_agent.tools.roles'
+build_participant_registry() filters from (mirrors agent_meeting.role_tools'
 register_role_tools() opt-in pattern) -- kept local to Agent-Meeting rather than
 added to the shared research_agent library, since it's specific to this project's
 multi-round mechanic, not a general-purpose tool.
