@@ -62,6 +62,10 @@ class RoleDefinition:
         return self.frontmatter.get("provider")
 
     @property
+    def reasoning_effort(self) -> str | None:
+        return self.frontmatter.get("reasoning_effort")
+
+    @property
     def max_iterations(self) -> int:
         return int(self.frontmatter.get("max_iterations") or 8)
 

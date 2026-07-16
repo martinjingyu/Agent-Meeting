@@ -50,7 +50,8 @@ from research_agent.agent import GeneralAgent
 
 from . import roles as roles_api
 from .aggregate import aggregate_responses
-from .config import MeetingConfig, ParticipantConfig
+from .config import MeetingConfig, ParticipantConfig, PlannerConfig
+from .judge import judge_should_stop
 from .storage import (
     load_meeting,
     load_turn_cache,
@@ -85,6 +86,20 @@ def _assemble_meeting_dict(
         }
         roster: dict[str, Any] = extra.get("roster") or {}
         participants = list(roster.values()) if roster else [
+            {"name": p.name, "role": p.role, "model": p.model, "provider": p.provider}
+            for p in config.participants
+        ]
+    elif config.mode == "planning_rounds":
+        orchestration = {
+            "type": "planning_rounds",
+            "notes": (
+                "participants contribute ideas/suggestions only (never a Plan) for up to "
+                f"{config.max_rounds} rounds; a judge model decides stop/continue after each "
+                "round; a dedicated planner then synthesizes the discussion into the final Plan"
+            ),
+        }
+        roster = {}
+        participants = [
             {"name": p.name, "role": p.role, "model": p.model, "provider": p.provider}
             for p in config.participants
         ]
@@ -130,16 +145,25 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
     moderator: the moderator's own conversation is resumed via its saved session
     (history=), continuing from exactly where it left off; notes/agenda/roster/already-
     completed participant steps are restored from the checkpoint rather than replayed.
+
+    planning_rounds: same pairing idea as parallel_qa -- each completed round leaves a
+    (participant_step, judge_step) pair in the checkpoint, so len(existing_steps) // 2
+    is the count of finished rounds; the planner step itself is never checkpointed
+    mid-round (it only runs once, after the round loop exits), so a resume never has
+    to worry about a partially-run planner.
     """
     handlers: dict[str, Callable[..., list[dict[str, Any]]]] = {
         "parallel_qa": _run_parallel_qa,
         "moderator": _run_moderator,
+        "planning_rounds": _run_planning_rounds,
     }
     handler = handlers.get(config.mode)
     if handler is None:
         raise ValueError(f"Unknown meeting mode: {config.mode!r}")
     if config.mode == "moderator" and config.moderator is None:
         raise ValueError("mode='moderator' requires config.moderator to be set")
+    if config.mode == "planning_rounds" and config.planner is None:
+        raise ValueError("mode='planning_rounds' requires config.planner to be set")
 
     mode_kwargs: dict[str, Any] = {}
 
@@ -170,6 +194,21 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
                 initial_steps=existing_steps,
                 initial_aggregated_plan=aggregated_plan,
                 initial_prior_turns=prior_turns,
+            )
+            if config.verbose:
+                log("meeting", f"{meeting_id} resuming from round {start_round} ({completed_rounds} round(s) already complete)")
+        elif config.mode == "planning_rounds":
+            # (participant_step, judge_step) pairs per fully-completed round -- same
+            # pairing convention as parallel_qa, see run_meeting's docstring above.
+            completed_rounds = len(existing_steps) // 2
+            start_round = completed_rounds + 1
+            initial_all_rounds_turns = [
+                existing_steps[i * 2]["turns"] for i in range(completed_rounds)
+            ]
+            mode_kwargs = dict(
+                start_round=start_round,
+                initial_steps=existing_steps,
+                initial_all_rounds_turns=initial_all_rounds_turns,
             )
             if config.verbose:
                 log("meeting", f"{meeting_id} resuming from round {start_round} ({completed_rounds} round(s) already complete)")
@@ -265,6 +304,7 @@ def _execute_turn(
     *,
     decided_by: str = "script",
     round_aware: bool = False,
+    extra_system_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Shared low-level turn executor: role resolution -> GeneralAgent construction ->
     run -> record -> cache. `round_num` here is only a cache-key/log-label -- for
@@ -287,11 +327,13 @@ def _execute_turn(
         system_prompt = roles_api.role_system_prompt(role)
         model = participant.model or role.model
         provider = participant.provider or role.provider
+        reasoning_effort = participant.reasoning_effort or role.reasoning_effort
         max_iterations = participant.max_iterations if participant.max_iterations != 8 else role.max_iterations
     else:
         system_prompt = participant.build_system_prompt()
         model = participant.model
         provider = participant.provider
+        reasoning_effort = participant.reasoning_effort
         max_iterations = participant.max_iterations
 
     meeting_shared_dir = shared_dir(meeting_id)
@@ -302,6 +344,8 @@ def _execute_turn(
         "to build on). Files in your own workspace stay private -- only put something "
         "there if you want other participants to see it."
     )
+    if extra_system_prompt:
+        system_prompt += f"\n\n{extra_system_prompt}"
 
     registry = build_participant_registry(role_backed=role is not None, round_aware=round_aware)
     recorder.available_tools = sorted(registry.names)
@@ -318,6 +362,7 @@ def _execute_turn(
     agent = GeneralAgent(
         model=model,
         provider=provider,
+        reasoning_effort=reasoning_effort,
         max_iterations=max_iterations,
         self_review=False,
         registry=registry,
@@ -534,6 +579,269 @@ def _run_final_audit(
             }
         ],
     }
+
+
+_IDEAS_ONLY_ADDENDUM = (
+    "This meeting is a PLANNING discussion, not an execution meeting, and it works "
+    "differently from a normal Q&A round: your job in every round is to contribute "
+    "POINTS, SUGGESTIONS, and IDEAS only. You must NEVER draft a Plan, pipeline, "
+    "module breakdown, directory/file structure, or step-by-step implementation "
+    "sequence yourself -- that synthesis is done later by a dedicated Planner, not by "
+    "you. If you catch yourself writing something that reads like a plan (numbered "
+    "steps, a pipeline diagram, an implementation order), stop and instead phrase it "
+    "as a suggestion or consideration for the eventual planner to weigh. You may "
+    "agree, disagree, or build on other participants' points from prior rounds."
+)
+
+
+def _round_transcript(all_rounds_turns: list[list[dict[str, Any]]]) -> str:
+    lines: list[str] = []
+    for round_turns in all_rounds_turns:
+        if not round_turns:
+            continue
+        round_num = round_turns[0].get("round")
+        lines.append(f"\n[Round {round_num}]")
+        for turn in round_turns:
+            lines.append(f"{turn['agent']}: {turn['output']}")
+    return "\n".join(lines)
+
+
+def _build_planning_round_message(
+    question: str,
+    round_num: int,
+    all_rounds_turns: list[list[dict[str, Any]]],
+) -> str:
+    if round_num == 1:
+        return (
+            f"{question}\n\n"
+            f"=== Round {round_num} ===\n"
+            "Contribute your points, suggestions and ideas for how to approach this. "
+            "Remember: no Plan, no pipeline, no step-by-step design -- ideas and "
+            "considerations only."
+        )
+
+    transcript = _round_transcript(all_rounds_turns)
+    return (
+        f"=== Original meeting question ===\n{question}\n\n"
+        f"=== Discussion so far (all participants, all rounds) ===\n{transcript}\n\n"
+        f"=== Round {round_num} ===\n"
+        "Building on the discussion so far, refine or add new points, suggestions and "
+        "ideas. You may agree, disagree, or extend what others said. Still no Plan or "
+        "pipeline -- ideas and considerations only. You MUST call submit_round_answer "
+        "to finish this round -- state what you changed and why in "
+        "changes_from_prior_round (write 'No changes' if you kept your prior "
+        "position), and give your full current position in answer."
+    )
+
+
+def _run_planning_participant_turn(
+    participant: ParticipantConfig,
+    question: str,
+    meeting_id: str,
+    round_num: int,
+    all_rounds_turns: list[list[dict[str, Any]]],
+    verbose: bool,
+) -> dict[str, Any]:
+    round_message = _build_planning_round_message(question, round_num, all_rounds_turns)
+    return _execute_turn(
+        participant, round_message, meeting_id, round_num, verbose,
+        decided_by="script", round_aware=round_num > 1,
+        extra_system_prompt=_IDEAS_ONLY_ADDENDUM,
+    )
+
+
+def _run_planning_round(
+    config: MeetingConfig,
+    meeting_id: str,
+    round_num: int,
+    all_rounds_turns: list[list[dict[str, Any]]],
+) -> dict[str, Any]:
+    step_start = now()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(config.participants))) as ex:
+        futures = {
+            ex.submit(
+                _run_planning_participant_turn,
+                p, config.question, meeting_id, round_num, all_rounds_turns, config.verbose,
+            ): p.name
+            for p in config.participants
+        }
+        turns_unordered = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+    order = {p.name: i for i, p in enumerate(config.participants)}
+    turns = sorted(turns_unordered, key=lambda t: order.get(t["agent"], 999))
+
+    step_end = now()
+    return {
+        "step_index": None,
+        "step_start": iso(step_start),
+        "step_end": iso(step_end),
+        "decided_by": "script",
+        "trigger_reason": f"planning_rounds round {round_num}: participants contribute ideas",
+        "turns": turns,
+    }
+
+
+def _run_judge_step(
+    config: MeetingConfig,
+    round_num: int,
+    all_rounds_turns: list[list[dict[str, Any]]],
+) -> tuple[bool, dict[str, Any]]:
+    if config.verbose:
+        log("meeting", f"round {round_num}: all participant(s) done, asking judge whether to stop...")
+
+    judge_start = now()
+    decision = judge_should_stop(config.question, _round_transcript(all_rounds_turns))
+    judge_end = now()
+
+    if config.verbose:
+        log("meeting", f"round {round_num}: judge says {'STOP' if decision['stop'] else 'continue'}")
+
+    step = {
+        "step_index": None,
+        "step_start": iso(judge_start),
+        "step_end": iso(judge_end),
+        "decided_by": "judge",
+        "trigger_reason": f"judge decision after round {round_num}",
+        "turns": [
+            {
+                "turn_id": f"trn_judge_{round_num}",
+                "agent": "__judge__",
+                "decided_by": "judge",
+                "round": round_num,
+                "input": decision["prompt"],
+                "output": decision["output"],
+                "stop": decision["stop"],
+                "start_time": iso(judge_start),
+                "end_time": iso(judge_end),
+                "duration_ms": int((judge_end - judge_start).total_seconds() * 1000),
+            }
+        ],
+    }
+    return bool(decision["stop"]), step
+
+
+def _default_planner_system_prompt(planner: PlannerConfig) -> str:
+    return (
+        f"You are {planner.name}, the planner for a multi-agent planning meeting.\n\n"
+        "A planning meeting has just concluded. Participants only contributed points, "
+        "suggestions, and ideas across multiple rounds -- none of them drafted a Plan "
+        "or pipeline. That synthesis is now your job. Synthesize the entire discussion "
+        "into one concrete, executable Plan/pipeline design. Resolve disagreements "
+        "between participants explicitly (state which view you're adopting and why) "
+        "rather than listing them side by side unresolved. The plan should be detailed "
+        "enough that another engineer could implement it without further "
+        "methodology-level decisions. Save the final Plan to a file in your workspace "
+        "using the file tools, then respond with the same Plan content."
+    )
+
+
+def _run_planner_step(
+    config: MeetingConfig,
+    meeting_id: str,
+    all_rounds_turns: list[list[dict[str, Any]]],
+) -> dict[str, Any]:
+    planner = config.planner
+    transcript = _round_transcript(all_rounds_turns)
+
+    if config.verbose:
+        log("meeting", f"planner ({planner.name}): synthesizing final Plan from {len(all_rounds_turns)} round(s)...")
+
+    recorder = TurnRecorder(agent=planner.name, round_num=0, decided_by="planner")
+    ui = TrajectoryUI(recorder, verbose=config.verbose)
+
+    system_prompt = planner.system_prompt or _default_planner_system_prompt(planner)
+    meeting_shared_dir = shared_dir(meeting_id)
+    system_prompt += (
+        f"\n\nShared meeting files: {meeting_shared_dir} is a shared directory for this "
+        "meeting -- you may read anything participants left there while forming the plan."
+    )
+
+    registry = build_participant_registry(role_backed=False, round_aware=False)
+    recorder.available_tools = sorted(registry.names)
+
+    session_path = sessions_dir(meeting_id) / f"{planner.name}.json"
+    workspace_root = participant_workspace_dir(meeting_id, planner.name)
+
+    user_message = (
+        f"=== Task ===\n{config.question}\n\n"
+        f"=== Full Discussion Transcript (all rounds, all participants) ===\n{transcript}\n\n"
+        "Write the final Plan now."
+    )
+
+    agent = GeneralAgent(
+        model=planner.model,
+        provider=planner.provider,
+        reasoning_effort=planner.reasoning_effort,
+        max_iterations=planner.max_iterations,
+        self_review=False,
+        registry=registry,
+        ui=ui,
+        session_path=session_path,
+        sub_agent=True,
+        agent_role="planner",
+        workspace_root=workspace_root,
+        shared_roots=[meeting_shared_dir],
+    )
+    agent.llm = LoggingLLMClient(agent.llm, recorder, ui)
+
+    recorder.start_time = now()
+    result = agent.run(user_message, system_prompt=system_prompt)
+    recorder.end_time = now()
+
+    recorder.output = result.get("final") or ""
+    recorder.session_id = result.get("session_id")
+    recorder.session_path = result.get("session_path")
+
+    turn = recorder.to_turn_dict()
+    turn["role"] = "planner"
+    turn["role_ref"] = None
+
+    return {
+        "step_index": None,
+        "step_start": iso(recorder.start_time),
+        "step_end": iso(recorder.end_time),
+        "decided_by": "planner",
+        "trigger_reason": "planner synthesizes final Plan",
+        "turns": [turn],
+    }
+
+
+def _run_planning_rounds(
+    config: MeetingConfig,
+    meeting_id: str,
+    checkpoint: Callable[..., None] | None = None,
+    *,
+    start_round: int = 1,
+    initial_steps: list[dict[str, Any]] | None = None,
+    initial_all_rounds_turns: list[list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
+    all_steps: list[dict[str, Any]] = list(initial_steps or [])
+    all_rounds_turns: list[list[dict[str, Any]]] = list(initial_all_rounds_turns or [])
+    max_rounds = max(1, config.max_rounds)
+
+    for round_num in range(start_round, max_rounds + 1):
+        round_step = _run_planning_round(config, meeting_id, round_num, all_rounds_turns)
+        all_rounds_turns.append(round_step["turns"])
+        all_steps.append(round_step)
+
+        should_stop, judge_step = _run_judge_step(config, round_num, all_rounds_turns)
+        all_steps.append(judge_step)
+
+        for i, step in enumerate(all_steps):
+            step["step_index"] = i
+        if checkpoint is not None:
+            checkpoint(all_steps)
+
+        if should_stop:
+            break
+
+    planner_step = _run_planner_step(config, meeting_id, all_rounds_turns)
+    all_steps.append(planner_step)
+    for i, step in enumerate(all_steps):
+        step["step_index"] = i
+
+    return all_steps
 
 
 def _moderator_system_prompt(config: MeetingConfig) -> str:

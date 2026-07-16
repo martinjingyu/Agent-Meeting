@@ -13,3 +13,5 @@ Pipeline summary:
 - Fallback: MobileCLIP-S0 for challenging CGI-vs-real datasets; heuristics-only mode if neural too slow.
 Key risks: truro_school (59% of total, stratified sampling), digital_domain (CGI vs real, flagged for human review).
 Output: 11 per-dataset top-100 galleries + review pools + aggregate stats in workspace/output/.
+§
+Final deliverable: final_pipeline_plan.md (shared directory) — Baseline-first pipeline with only 6 signals, 4 hard-reject rules, P10 soft filter, 1 composite score, 1 dhash dedup method. Zero-model baseline. MobileNetV3-Small only as optional add-on if CGI failure observed. Runtime estimate 10-30 min (honest, not optimistic). Key departure from v3: removed face detection, skin_ratio, homogeneity, horizontal_balance, DBSCAN, per-cluster quotas, per-dataset loosen factors, multi-level dhash. Explicit appendix listing everything intentionally excluded and why.

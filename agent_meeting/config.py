@@ -11,6 +11,7 @@ class ParticipantConfig:
     system_prompt: str | None = None
     model: str | None = None
     provider: str | None = None
+    reasoning_effort: str | None = None
     max_iterations: int = 8
     role_ref: str | None = None
     """Name of a stored role (agent_meeting.roles) to pull in instead of the ad-hoc
@@ -51,6 +52,19 @@ class ModeratorConfig:
 
 
 @dataclass
+class PlannerConfig:
+    name: str = "Planner"
+    system_prompt: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    reasoning_effort: str | None = None
+    max_iterations: int = 20
+    """Higher than a participant's default -- unlike participants (prose-only,
+    ideas/suggestions), the planner actually writes the final Plan to disk via file
+    tools, which can take a few tool-call iterations."""
+
+
+@dataclass
 class MeetingConfig:
     question: str
     participants: list[ParticipantConfig] = field(default_factory=list)
@@ -69,3 +83,12 @@ class MeetingConfig:
     moderator: ModeratorConfig | None = None
     """Required when mode="moderator". participants (if non-empty) pre-seed the
     roster before the moderator starts -- it can still add more dynamically."""
+    max_rounds: int = 8
+    """mode="planning_rounds" only: hard cap on ideation rounds, independent of the
+    judge's stop/continue decision -- a judge that never says stop can't run the
+    round loop away indefinitely."""
+    planner: PlannerConfig | None = None
+    """Required when mode="planning_rounds". Runs once, after the judge stops the
+    round loop (or max_rounds is hit), to synthesize the entire multi-round
+    discussion into the final Plan -- participants in this mode never draft a Plan
+    themselves, so this is the only place the Plan actually gets written."""
