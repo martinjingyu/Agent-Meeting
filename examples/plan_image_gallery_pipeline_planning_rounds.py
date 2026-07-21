@@ -89,7 +89,7 @@ def main() -> None:
     # hardcoded this way in agent_meeting/judge.py); set explicitly here too so the
     # roster doesn't silently fall back to whatever model/provider each role's own
     # DEFINITION.md frontmatter happens to specify.
-    participant_defaults = dict(model="deepseek-v4-pro", provider="deepseek", reasoning_effort="medium")
+    participant_defaults = dict(model="deepseek-v4-pro", provider="deepseek", reasoning_effort="high")
 
     config = MeetingConfig(
         question=build_question(),
@@ -150,6 +150,11 @@ def main() -> None:
             turn = step["turns"][0]
             verdict = "STOP" if turn.get("stop") else "continue"
             print(f"\n{'=' * 20} JUDGE after round {turn['round']}: {verdict} {'=' * 20}")
+            print(f"reasoning: {turn.get('reasoning', '')}")
+            if turn.get("unresolved_issues"):
+                print(f"unresolved_issues: {turn['unresolved_issues']}")
+            if turn.get("override_reason"):
+                print(f"OVERRIDE: {turn['override_reason']}")
             continue
         if step["decided_by"] == "planner":
             continue  # printed separately as FINAL PLAN below

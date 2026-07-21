@@ -1,7 +1,0 @@
-MobileCLIP2-S0 total params: 74,835,073
-Visual tower params: 11,406,976
-Under 100M: True
-Model load time: 3.1s
-First inference (cold, includes randn): 0.800s
-Average warm inference (5 runs): 1.270s
-Output shape: torch.Size([1, 512])

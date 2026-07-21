@@ -51,7 +51,7 @@ from research_agent.agent import GeneralAgent
 from . import roles as roles_api
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig, PlannerConfig
-from .judge import judge_should_stop
+from .judge import blocking_verdicts_this_round, judge_should_stop
 from .storage import (
     load_meeting,
     load_turn_cache,
@@ -392,6 +392,9 @@ def _execute_turn(
     # scope here so we read it straight off the instance (same coupling agent.llm
     # swapping already relies on).
     turn["changes_from_prior_round"] = getattr(agent, "_runtime", {}).get("round_changes")
+    turn["contract_verdict"] = (
+        roles_api.extract_output_contract_verdict(role, turn["output"]) if role else None
+    )
     save_turn_cache(meeting_id, round_num, participant.name, turn)
     return turn
 
@@ -694,8 +697,24 @@ def _run_judge_step(
     decision = judge_should_stop(config.question, _round_transcript(all_rounds_turns))
     judge_end = now()
 
+    blocking = blocking_verdicts_this_round(all_rounds_turns[-1]) if all_rounds_turns else {}
+    stop = bool(decision["stop"])
+    override_reason = None
+    if blocking and stop:
+        override_reason = (
+            f"Overriding judge stop=True -> False: {blocking} gave a blocking "
+            "contract verdict (REVISE/REJECT) this round -- the meeting cannot "
+            "stop while one stands, regardless of the judge's own reasoning."
+        )
+        stop = False
+
     if config.verbose:
-        log("meeting", f"round {round_num}: judge says {'STOP' if decision['stop'] else 'continue'}")
+        verdict = "STOP" if stop else "continue"
+        log("meeting", f"round {round_num}: judge says {verdict} -- {decision.get('reasoning', '')}")
+        if decision.get("unresolved_issues"):
+            log("meeting", f"round {round_num}: judge unresolved_issues: {decision['unresolved_issues']}")
+        if override_reason:
+            log("meeting", f"round {round_num}: {override_reason}")
 
     step = {
         "step_index": None,
@@ -711,14 +730,19 @@ def _run_judge_step(
                 "round": round_num,
                 "input": decision["prompt"],
                 "output": decision["output"],
-                "stop": decision["stop"],
+                "stop": stop,
+                "judge_stop_recommendation": bool(decision["stop"]),
+                "override_reason": override_reason,
+                "reasoning": decision.get("reasoning", ""),
+                "unresolved_issues": decision.get("unresolved_issues", []),
+                "per_participant_coverage": decision.get("per_participant_coverage", {}),
                 "start_time": iso(judge_start),
                 "end_time": iso(judge_end),
                 "duration_ms": int((judge_end - judge_start).total_seconds() * 1000),
             }
         ],
     }
-    return bool(decision["stop"]), step
+    return stop, step
 
 
 def _default_planner_system_prompt(planner: PlannerConfig) -> str:

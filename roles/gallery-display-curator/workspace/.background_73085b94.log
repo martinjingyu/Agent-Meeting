@@ -1,4 +1,0 @@
-  File "<string>", line 1
-    if True:
-            ^
-IndentationError: expected an indented block after 'if' statement on line 1

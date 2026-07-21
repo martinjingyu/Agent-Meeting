@@ -74,6 +74,31 @@ class RoleDefinition:
         return _role_dir(self.name) / "workspace"
 
 
+_VERDICT_WORD_RE = re.compile(r"\b([A-Z]{3,12})\b")
+
+
+def extract_output_contract_verdict(role: "RoleDefinition", output: str) -> str | None:
+    """If role.output_contract declares a pipe-separated enum of verdict tokens
+    (e.g. skeptic-reviewer's 'ACCEPT | REVISE | REJECT'), return whichever token
+    last appears as a whole word in the participant's actual turn output, or None
+    if the contract doesn't declare such an enum or none of its tokens appear in
+    the output.
+
+    This exists so a role's stated verdict (e.g. Skeptic writing "VERDICT: REVISE")
+    is available as structured data instead of only living as free text buried in
+    the transcript the judge reads -- a judge LLM can rationalize past a sentence
+    it disagrees with, but callers can check this field deterministically and,
+    e.g., refuse to let the meeting stop while a REVISE/REJECT verdict stands.
+    Deliberately narrow (exact uppercase token match): a backstop for enum-style
+    contracts, not a general verdict-extraction NLU parser."""
+    contract = str(role.frontmatter.get("output_contract") or "")
+    tokens = set(re.findall(r"[A-Z]{3,12}", contract))
+    if len(tokens) < 2:
+        return None
+    matches = [m for m in _VERDICT_WORD_RE.findall(output) if m in tokens]
+    return matches[-1] if matches else None
+
+
 def _role_dir(name: str) -> Path:
     return roles_root() / name
 
