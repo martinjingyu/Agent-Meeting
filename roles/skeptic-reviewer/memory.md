@@ -1,5 +1,1 @@
-In a past review, the same proposal was already rejected for lacking audit trails.
-§
-Round 1 verified: MobileCLIP-S0 unavailable in open_clip 3.3.0; MobileNetV3-small ~6.4s/image cold on this CPU (not 0.5-1s as Stage 1 claimed). Aggregated plan accepts heuristic-only core but has flaws: (1) dhash-split scene clustering is mathematically dubious, (2) Haar cascade face detection is unreliable for diversity quotas, (3) no falsification criteria specified.
-§
-Review of pipeline_plan_v2.md for mtg_215f666019. Key prior findings: MobileNetV3-small measured ~6.4s/image cold on this CPU (not 0.5-1s). dhash-split clustering mathematically dubious. Haar cascade face detection unreliable.
+R5 key finding: noise_floor < 0.5 falsified as graphic-vs-photo discriminator (41/72 images, including many real photos, have nf < 0.5). G1 has zero false positives on real photos in 72-image test. P2 fires on colorful white-background graphics (near_white 0.60-0.70 range) — these evade G1 but P2's hues>15+entropy>2.5 fires on their colorful icons. Cascade misses graphics in the nw=0.60-0.70 range.

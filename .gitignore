@@ -3,3 +3,5 @@ roles/*/workspace/
 __pycache__/
 *.pyc
 *.egg-info/
+.analysis_build_*/
+examples/两次report/

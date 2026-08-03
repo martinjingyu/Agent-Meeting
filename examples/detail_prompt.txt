@@ -1,0 +1,50 @@
+You are in the dataset reconnaissance stage.
+
+Inspect the image datasets under `C:\Users\SamGreen\Desktop\pics`. Treat each first-level subfolder as a separate dataset. The goal is to understand the actual contents and calibrate a future selection algorithm for an official website gallery presented as a horizontal carousel with consistent image height and proportional scaling.
+
+Use multiple subagents with distinct and complementary roles. Determine the roles dynamically after an initial scan of the datasets. Define each role's scope and explain why it is relevant to the observed data. Minimize unnecessary overlap, and revise the role allocation if later findings justify it.
+
+Each subagent must:
+
+* work independently during its initial analysis;
+* inspect all relevant datasets from its assigned perspective;
+* record its methods, tools, assumptions, findings, uncertainties, and limitations;
+* create its own report and supporting artifacts;
+* store all outputs in a dedicated role folder under a shared reconnaissance workspace.
+
+Use a structure similar to:
+
+```text
+recon_workspace/
+  <role_name>/
+    report.md
+    records/
+    examples/
+    review_materials/
+  synthesis/
+```
+
+Do not mix one role's intermediate files with another role's files. Files shared across roles should be copied or referenced explicitly. If a model is used, document its purpose and the type of output it produced.
+
+Subagents may create temporary scripts, metadata tables, captions, thumbnails, contact sheets, similarity analyses, clusters, review pages, or other useful exploratory artifacts. Keep all source datasets unchanged.
+
+After the independent passes, the main agent should compare the role reports, identify agreements and disagreements, and produce a synthesis report. Explain how each subagent's findings affected the combined conclusions. Preserve meaningful conflicting observations rather than forcing artificial agreement.
+
+Keep the work broad and discovery-oriented. Investigate dataset composition, visual themes, image types, quality patterns, duplicates, diversity, outliers, text-heavy or screenshot-like content, watermarks, presentation compatibility, and other factors that may affect official gallery use.
+
+The final synthesis should cover:
+
+* datasets found and their apparent contents;
+* major visual patterns and categories;
+* quality issues, anomalies, and common failure modes;
+* duplicate and diversity patterns;
+* representative and outlier examples;
+* fit with the existing gallery-selection framework;
+* candidate positive signals, penalties, exclusions, diversity rules, and manual-review flags;
+* possible value of lightweight models, captioning, or other automated analysis;
+* agreements and disagreements between subagents;
+* risks, limitations, open questions, and decisions needed before implementation.
+
+Create an auditable workspace containing the role-specific reports, supporting records, representative examples, review artifacts, and the final synthesis.
+
+This stage is only for dataset understanding and algorithm calibration. Do not present exploratory scores, captions, clusters, samples, or subagent opinions as final rankings or final selected gallery results.

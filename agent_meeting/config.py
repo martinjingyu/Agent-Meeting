@@ -9,6 +9,10 @@ class ParticipantConfig:
     role: str = ""
     skills: str = ""
     system_prompt: str | None = None
+    meeting_brief: str | None = None
+    """Optional meeting-specific assignment appended after either the reusable
+    role_ref prompt or the ad-hoc participant prompt. This keeps stable role identity
+    separate from the concrete responsibility in one meeting."""
     model: str | None = None
     provider: str | None = None
     reasoning_effort: str | None = None
@@ -92,3 +96,24 @@ class MeetingConfig:
     round loop (or max_rounds is hit), to synthesize the entire multi-round
     discussion into the final Plan -- participants in this mode never draft a Plan
     themselves, so this is the only place the Plan actually gets written."""
+    planner_inline_rounds: int | None = 3
+    """mode="planning_rounds" only: number of most-recent discussion rounds embedded
+    verbatim in the Planner's initial message. Set to None to embed every round.
+    When earlier rounds are not embedded, the complete transcript is still written
+    to the meeting shared directory and exposed to the Planner as a readable file."""
+    planning_participant_addendum: str | None = None
+    """mode="planning_rounds" only: optional replacement for the default participant
+    system addendum that limits participants to ideas/suggestions. Examples can use
+    this to allow candidate architecture sketches or technical data flows while still
+    reserving the adopted final Plan for the dedicated Planner."""
+    persist_role_state: bool = False
+    """Role-backed participants/moderator normally read/write roles/<role_ref>/
+    {memory.md,workspace/} -- state that's shared across EVERY meeting that ever
+    uses that role_ref (see roles.py). Left False (the default), this meeting
+    snapshots each role_ref's memory.md/workspace/ before it starts and rolls them
+    back to that exact snapshot once the meeting reaches its final "completed"
+    status, so the role ends up looking like the meeting never happened. Set True
+    to let this meeting's role_memory writes and workspace files persist into
+    future meetings, as they always did before this flag existed. Resuming a
+    failed run does not roll anything back mid-flight -- only a meeting that
+    actually finishes triggers the rollback. See role_state.py."""

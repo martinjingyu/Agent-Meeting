@@ -33,13 +33,27 @@ def participant_workspace_dir(meeting_id: str, participant_name: str) -> Path:
 
 
 def shared_dir(meeting_id: str) -> Path:
-    """The one explicit, opt-in area every participant in this meeting can read AND
-    write via the file tools (research_agent's shared_roots mechanism), in addition
-    to their own private workspace. Meant for deliberate sharing -- e.g. attaching a
-    source document for everyone, or one participant publishing a result for others
-    to build on -- never for participants to browse each other's private workspaces
-    or leftover files from older meeting runs, which stay off-limits."""
+    """The one explicit, opt-in area every participant in this meeting can read via the
+    file tools, in addition to their own private workspace. Meant for deliberate
+    sharing -- e.g. attaching a source document for everyone, or one participant
+    publishing a result for others to build on -- never for participants to browse
+    each other's private workspaces or leftover files from older meeting runs, which
+    stay off-limits. Writing here is further scoped to each participant's own
+    subfolder -- see participant_shared_dir()."""
     path = RUNS_DIR / meeting_id / "shared"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def participant_shared_dir(meeting_id: str, participant_name: str) -> Path:
+    """Each participant's own writable subfolder under shared_dir() -- the write-side
+    counterpart to shared_dir()'s read access. Read tools carry no sandbox check
+    (research_agent's resolve_readable_path), so every participant can already read
+    anything under shared_dir(), including other participants' subfolders. But the
+    file-write tools (write_file/patch_file/append_file) are only ever handed this one
+    subfolder as their shared_roots entry, so one participant's writes can't land in
+    another participant's shared area or in the shared root itself."""
+    path = shared_dir(meeting_id) / participant_name
     path.mkdir(parents=True, exist_ok=True)
     return path
 

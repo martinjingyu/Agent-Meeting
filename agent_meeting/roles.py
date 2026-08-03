@@ -74,29 +74,78 @@ class RoleDefinition:
         return _role_dir(self.name) / "workspace"
 
 
-_VERDICT_WORD_RE = re.compile(r"\b([A-Z]{3,12})\b")
+_VERDICT_WORD_RE = re.compile(r"\b([A-Za-z]{3,12})\b")
+_EXPLICIT_VERDICT_RE = re.compile(
+    r"(?im)^\s*(?:#{1,6}\s*)?(?:[-*]\s*)?(?:\*\*)?\s*VERDICT\s*:?\s*(?:\*\*)?\s*([A-Za-z]{3,12})\b"
+)
+# A verdict heading on its own line (e.g. markdown "## Verdict"), with nothing
+# else on that line -- the actual token is expected on one of the following
+# lines (e.g. "## Verdict\n\n**REVISE** -- ..."), which _EXPLICIT_VERDICT_RE
+# alone can't reach since it only looks at the same line as "VERDICT".
+_VERDICT_HEADING_RE = re.compile(r"(?im)^\s*#{1,6}\s*verdict\s*:?\s*$")
+# A token that leads a line (after stripping bullet/bold markers), e.g.
+# "**REVISE** -- three material corrections" or "REVISE: ...". Deliberately
+# anchored to the start of the line -- unlike _VERDICT_WORD_RE's bare \b match,
+# this can't be tricked by a token word used in prose later in the same line
+# (see module-level extract_output_contract_verdict docstring for why that
+# matters).
+_LEADING_TOKEN_RE = re.compile(r"^(?:[-*]\s*)?(?:\*\*)?\s*([A-Za-z]{3,12})\b")
 
 
 def extract_output_contract_verdict(role: "RoleDefinition", output: str) -> str | None:
     """If role.output_contract declares a pipe-separated enum of verdict tokens
-    (e.g. skeptic-reviewer's 'ACCEPT | REVISE | REJECT'), return whichever token
-    last appears as a whole word in the participant's actual turn output, or None
-    if the contract doesn't declare such an enum or none of its tokens appear in
-    the output.
+    (e.g. skeptic-reviewer's 'ACCEPT | REVISE | REJECT'), return the verdict token
+    stated in the participant's actual turn output, or None if the contract doesn't
+    declare such an enum or the output has no unambiguous verdict.
 
     This exists so a role's stated verdict (e.g. Skeptic writing "VERDICT: REVISE")
     is available as structured data instead of only living as free text buried in
     the transcript the judge reads -- a judge LLM can rationalize past a sentence
     it disagrees with, but callers can check this field deterministically and,
     e.g., refuse to let the meeting stop while a REVISE/REJECT verdict stands.
-    Deliberately narrow (exact uppercase token match): a backstop for enum-style
-    contracts, not a general verdict-extraction NLU parser."""
+    The parser deliberately prefers an explicit line such as "VERDICT: REVISE".
+    If no such line exists, it only falls back to a verdict token that LEADS one
+    of the final lines (after stripping bullet/bold markers). It must not scan
+    the whole output -- or even a whole candidate line -- for any occurrence of
+    an enum word, because explanatory prose routinely uses those same words with
+    their ordinary English meaning (e.g. "the detection ceiling is now fully
+    measured -- accept it and design around X" is not a verdict declaration, it's
+    a sentence that happens to contain the word "accept"; a bare \\b-word scan
+    over the whole line matched exactly that and returned ACCEPT instead of the
+    real "**REVISE**" verdict two lines above it -- see roles_test / the R9
+    Skeptic turn in mtg_6b0c464bc9 for the real transcript that exposed this)."""
     contract = str(role.frontmatter.get("output_contract") or "")
     tokens = set(re.findall(r"[A-Z]{3,12}", contract))
     if len(tokens) < 2:
         return None
-    matches = [m for m in _VERDICT_WORD_RE.findall(output) if m in tokens]
-    return matches[-1] if matches else None
+
+    explicit_matches = [
+        match.group(1).upper()
+        for match in _EXPLICIT_VERDICT_RE.finditer(output)
+        if match.group(1).upper() in tokens
+    ]
+    if explicit_matches:
+        return explicit_matches[-1]
+
+    lines = output.splitlines()
+    for i, line in enumerate(lines):
+        if not _VERDICT_HEADING_RE.match(line):
+            continue
+        for follower in lines[i + 1:i + 4]:
+            follower = follower.strip()
+            if not follower:
+                continue
+            match = _LEADING_TOKEN_RE.match(follower)
+            if match and match.group(1).upper() in tokens:
+                return match.group(1).upper()
+            break  # first non-blank line after the heading didn't lead with a token
+
+    nonempty_lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for line in reversed(nonempty_lines[-5:]):
+        match = _LEADING_TOKEN_RE.match(line)
+        if match and match.group(1).upper() in tokens:
+            return match.group(1).upper()
+    return None
 
 
 def _role_dir(name: str) -> Path:

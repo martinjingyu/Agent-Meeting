@@ -52,11 +52,13 @@ from . import roles as roles_api
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig, PlannerConfig
 from .judge import blocking_verdicts_this_round, judge_should_stop
+from .role_state import clear_role_workspaces, collect_role_refs, restore_role_states, snapshot_role_states
 from .storage import (
     load_meeting,
     load_turn_cache,
     meeting_exists,
     new_meeting_id,
+    participant_shared_dir,
     participant_workspace_dir,
     save_meeting,
     save_turn_cache,
@@ -134,7 +136,9 @@ def _assemble_meeting_dict(
     return data
 
 
-def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, Any]:
+def run_meeting(
+    config: MeetingConfig, resume: str | None = None, extra_rounds: int | None = None
+) -> dict[str, Any]:
     """resume: pass a previous run's meeting_id (from a "FAILED" log line / a
     runs/<id>.json with status="in_progress") to continue it instead of starting over.
 
@@ -151,6 +155,19 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
     is the count of finished rounds; the planner step itself is never checkpointed
     mid-round (it only runs once, after the round loop exits), so a resume never has
     to worry about a partially-run planner.
+
+    extra_rounds (planning_rounds only): a meeting that already reached status=
+    "completed" -- because the judge (rightly or, as happened in practice, wrongly)
+    decided to stop -- is otherwise a dead end: resume on a "completed" meeting always
+    raised, so the only way to get more discussion was a brand new meeting_id, which
+    starts over with none of the prior transcript/turn_cache/shared/ carried over --
+    for all practical purposes a restart, not a resume. Passing extra_rounds>0 reopens
+    a completed planning_rounds meeting instead: every already-completed round's turns
+    are kept as-is (never re-run), the stale old planner step is dropped, the round
+    loop continues for `extra_rounds` more rounds (subject to the judge/contract-verdict
+    override stopping it sooner, same as any other round), and the planner then
+    re-synthesizes over the full (old + new) discussion. Ignored for any other mode,
+    and for a resume that isn't reopening an already-"completed" meeting.
     """
     handlers: dict[str, Callable[..., list[dict[str, Any]]]] = {
         "parallel_qa": _run_parallel_qa,
@@ -171,7 +188,8 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
         if not meeting_exists(resume):
             raise FileNotFoundError(f"No checkpoint found for meeting_id={resume!r} under runs/")
         checkpoint_data = load_meeting(resume)
-        if checkpoint_data.get("status") == "completed":
+        reopening_completed = checkpoint_data.get("status") == "completed"
+        if reopening_completed and not (config.mode == "planning_rounds" and extra_rounds):
             raise ValueError(f"Meeting {resume} already completed -- nothing to resume")
         meeting_id = resume
         created_at = datetime.fromisoformat(checkpoint_data["created_at"])
@@ -200,17 +218,36 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
         elif config.mode == "planning_rounds":
             # (participant_step, judge_step) pairs per fully-completed round -- same
             # pairing convention as parallel_qa, see run_meeting's docstring above.
+            # Integer division here is safe even when existing_steps also has a
+            # trailing planner step tacked on (the reopening_completed case below):
+            # a planner step is always exactly 1 extra step, and 1 never survives
+            # `// 2` -- it's always the completed-round pairs that get counted.
             completed_rounds = len(existing_steps) // 2
             start_round = completed_rounds + 1
+            # Drop anything past the last full round pair -- in particular the old
+            # planner step, when reopening a completed meeting -- so it isn't
+            # replayed into the new steps list; a fresh planner step covering the
+            # full (old + new) discussion gets appended once the round loop below
+            # finishes again.
+            existing_round_pairs = existing_steps[: completed_rounds * 2]
             initial_all_rounds_turns = [
-                existing_steps[i * 2]["turns"] for i in range(completed_rounds)
+                existing_round_pairs[i * 2]["turns"] for i in range(completed_rounds)
             ]
             mode_kwargs = dict(
                 start_round=start_round,
-                initial_steps=existing_steps,
+                initial_steps=existing_round_pairs,
                 initial_all_rounds_turns=initial_all_rounds_turns,
             )
-            if config.verbose:
+            if reopening_completed:
+                mode_kwargs["max_rounds_override"] = completed_rounds + max(1, extra_rounds)
+                if config.verbose:
+                    log(
+                        "meeting",
+                        f"{meeting_id} reopening completed meeting: {completed_rounds} round(s) "
+                        f"already done, running {max(1, extra_rounds)} more (up to round "
+                        f"{mode_kwargs['max_rounds_override']}), then re-planning",
+                    )
+            elif config.verbose:
                 log("meeting", f"{meeting_id} resuming from round {start_round} ({completed_rounds} round(s) already complete)")
         else:
             resume_state = {
@@ -242,6 +279,16 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
     def checkpoint(steps_so_far: list[dict[str, Any]], **extra: Any) -> None:
         save_meeting(_assemble_meeting_dict(meeting_id, config, created_at, steps_so_far, status="in_progress", extra=extra))
 
+    role_refs = collect_role_refs(config)
+    if not config.persist_role_state:
+        if not resume:
+            # Only for a brand-new meeting -- a resume must never wipe workspace
+            # files this same (in-progress) meeting's earlier rounds already wrote.
+            clear_role_workspaces(role_refs)
+        # Idempotent -- a resumed call for the same meeting_id is a no-op here, it
+        # only snapshots on this meeting's very first (non-resumed) attempt.
+        snapshot_role_states(meeting_id, role_refs)
+
     try:
         steps = handler(config, meeting_id, checkpoint, **mode_kwargs)
     except Exception:
@@ -265,6 +312,12 @@ def run_meeting(config: MeetingConfig, resume: str | None = None) -> dict[str, A
 
     data = _assemble_meeting_dict(meeting_id, config, created_at, steps, status="completed", extra=final_extra)
     save_meeting(data)
+
+    if not config.persist_role_state:
+        # Only fires here, once the meeting has actually finished -- never on a
+        # resumed attempt that still ends in failure (see run_meeting's docstring).
+        restore_role_states(meeting_id, role_refs)
+
     return data
 
 
@@ -305,10 +358,15 @@ def _execute_turn(
     decided_by: str = "script",
     round_aware: bool = False,
     extra_system_prompt: str | None = None,
+    context_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Shared low-level turn executor: role resolution -> GeneralAgent construction ->
     run -> record -> cache. `round_num` here is only a cache-key/log-label -- for
-    moderator-triggered turns it's a monotonic call counter, not a literal round."""
+    moderator-triggered turns it's a monotonic call counter, not a literal round.
+    `context_meta`, when given, is saved onto the turn dict as-is (next to session_id/
+    session_path) -- it's how callers that build the user_message themselves (e.g.
+    _run_planning_participant_turn's context-budget trimming and overflow retries)
+    surface what happened to this turn's context alongside its full saved session."""
     cached = load_turn_cache(meeting_id, round_num, participant.name)
     if cached is not None:
         if verbose:
@@ -336,13 +394,24 @@ def _execute_turn(
         reasoning_effort = participant.reasoning_effort
         max_iterations = participant.max_iterations
 
+    if participant.meeting_brief:
+        system_prompt += (
+            "\n\n=== Meeting-specific assignment ===\n"
+            f"{participant.meeting_brief}"
+        )
+
     meeting_shared_dir = shared_dir(meeting_id)
+    own_shared_dir = participant_shared_dir(meeting_id, participant.name)
     system_prompt += (
         f"\n\nShared meeting files: {meeting_shared_dir} is a shared directory for this "
-        "meeting. You may read and write files there to intentionally share material "
-        "with other participants (e.g. a source document, or a result you want others "
-        "to build on). Files in your own workspace stay private -- only put something "
-        "there if you want other participants to see it."
+        "meeting. You may READ anything under it, including other participants' own "
+        f"subfolders, to see what they've shared. But you may only WRITE inside your "
+        f"own subfolder, {own_shared_dir} (already created for you) -- put a file there "
+        "when you want other participants to see it (e.g. a source document, or a "
+        "result you want others to build on). You cannot write directly into the "
+        "shared root or into another participant's subfolder. Files in your own "
+        "private workspace stay private -- only put something in your shared subfolder "
+        "if you want other participants to see it."
     )
     if extra_system_prompt:
         system_prompt += f"\n\n{extra_system_prompt}"
@@ -372,7 +441,7 @@ def _execute_turn(
         agent_role="participant",
         extra_runtime=extra_runtime,
         workspace_root=workspace_root,
-        shared_roots=[meeting_shared_dir],
+        shared_roots=[own_shared_dir],
     )
     agent.llm = LoggingLLMClient(agent.llm, recorder, ui)
 
@@ -387,6 +456,7 @@ def _execute_turn(
     turn = recorder.to_turn_dict()
     turn["role"] = role.name if role else participant.role
     turn["role_ref"] = participant.role_ref
+    turn["context_meta"] = context_meta
     # submit_round_answer (round >= 2) stashes this into the agent's own runtime dict;
     # agent.run() doesn't return runtime, but the GeneralAgent instance is still in
     # scope here so we read it straight off the instance (same coupling agent.llm
@@ -597,44 +667,225 @@ _IDEAS_ONLY_ADDENDUM = (
 )
 
 
-def _round_transcript(all_rounds_turns: list[list[dict[str, Any]]]) -> str:
+_HANDOFF_CONTINUITY_ADDENDUM = (
+    "Continuity across rounds: each round starts you fresh, with no memory of your own "
+    "prior tool calls -- only the text of your past positions carries forward in the "
+    "discussion above. To avoid re-exploring the environment and re-deriving facts you "
+    "already established, maintain a file named handoff.md in your own workspace root "
+    "(a plain relative path -- your file tools resolve it there automatically):\n"
+    "- Before doing anything else this round, check whether handoff.md already exists "
+    "and read it first. If it names a concrete next test and how to run it (e.g. an "
+    "exact script/command you already wrote last round), run that directly instead of "
+    "re-exploring the environment from scratch.\n"
+    "- Before you finish this round (whether or not one existed before), overwrite "
+    "handoff.md with: environment/dependency facts you've already confirmed (so you "
+    "don't reconfirm them), artifacts you've produced and their paths, and the exact "
+    "next test/command to run first next round if one remains outstanding."
+)
+
+
+def _round_transcript(
+    all_rounds_turns: list[list[dict[str, Any]]],
+    own_agent: str | None = None,
+) -> str:
+    """own_agent, when given, pulls that agent's own turn out of the *last* round and
+    reprints it at the very end (after every other round/turn), so a participant's own
+    most recent position sits closest to the upcoming round prompt -- models attend
+    more reliably to content near the end of a long transcript."""
     lines: list[str] = []
+    own_turn: dict[str, Any] | None = None
+    own_round: Any = None
+    last_round_turns = all_rounds_turns[-1] if all_rounds_turns else None
     for round_turns in all_rounds_turns:
         if not round_turns:
             continue
         round_num = round_turns[0].get("round")
         lines.append(f"\n[Round {round_num}]")
         for turn in round_turns:
+            if own_agent and round_turns is last_round_turns and turn["agent"] == own_agent:
+                own_turn = turn
+                own_round = round_num
+                continue
             lines.append(f"{turn['agent']}: {turn['output']}")
+    if own_turn is not None:
+        lines.append(f"\n[Your own position from Round {own_round}]")
+        lines.append(f"{own_turn['agent']}: {own_turn['output']}")
     return "\n".join(lines)
+
+
+_AUTOMATION_ONLY_TASK_CONSTRAINTS = (
+    "=== Additional hard task constraints ===\n"
+    "- The final pipeline must be fully automated. Do not propose any required human "
+    "intervention, manual labeling, manual review queue, subjective visual inspection, "
+    "or human-in-the-loop parameter tuning as part of the solution.\n"
+    "- Any calibration, threshold selection, falsification check, or model comparison "
+    "must use existing files, deterministic scripts, published metadata, or synthetic/"
+    "programmatic tests. It must not depend on asking a person to label a batch of "
+    "data, curate examples, approve borderline cases, or tune parameters by eye.\n"
+    "- The pipeline may emit audit logs, uncertainty flags, rejected pools, and metrics "
+    "for transparency, but those outputs cannot be required steps for producing the "
+    "final ranked result.\n"
+)
+
+
+def _question_with_planning_constraints(question: str) -> str:
+    return f"{question}\n\n{_AUTOMATION_ONLY_TASK_CONSTRAINTS}"
+
+
+_EVIDENCE_BACKED_DISCUSSION_ADDENDUM = (
+    "When you make a material technical claim, ground it in evidence from this run "
+    "rather than only personal judgment, experience, or base-model knowledge. Prefer "
+    "small, cheap, reproducible tests: inspect representative files, run a short "
+    "script, benchmark a tiny sample, compare outputs, or write a falsification test. "
+    "State what you tested, where the artifact/log lives, and what result changed or "
+    "supported your view."
+    "\n\n"
+    "Finish what you can finish now. If you can identify a concrete next test that your "
+    "own remaining tool calls this turn could run, run it now instead of proposing it "
+    "as a future round's work -- a proposed-but-unexecuted experiment is a to-do item, "
+    "not a contribution. If a test hits an error (wrong model/file name, bad path, "
+    "missing dependency, etc.), diagnose and retry it within this same turn before "
+    "moving on; do not leave it as 'launched but not verified' when you still had tool "
+    "calls left. Only carry a test over to a future round if you are genuinely blocked "
+    "by something outside your control this turn (e.g. it needs another participant's "
+    "unfinished result, or you exhausted this turn's tool budget on a real attempt). "
+    "Only after such a genuine attempt and a real blocker may you label a claim an "
+    "untested hypothesis and not use it as a strong reason to accept or reject a "
+    "pipeline choice -- that label is not a shortcut for skipping work you were able "
+    "to finish this turn."
+    "\n\n"
+    "Test sample-size policy: choose the test size from the strength and type of "
+    "claim you want to support. Not every small test needs to be large, but stronger "
+    "claims require larger and more stratified evidence.\n"
+    "- Runtime or plumbing smoke test: use at least 10 total files, or 1-3 files per "
+    "relevant format/dataset. You may conclude feasibility, failure, or rough runtime "
+    "only; do not infer thresholds, quality, precision, or recall.\n"
+    "- Negative falsification test: target the suspected failure modes directly, "
+    "usually 5-10 files per failure mode. You may conclude a proposed hard rule is "
+    "unsafe if counterexamples exist; you may not conclude the replacement rule is "
+    "globally valid.\n"
+    "- Dataset-level distribution estimate: use at least max(30, sqrt(N)) files for "
+    "that dataset, capped at 200, with deterministic stratification where possible. "
+    "Report it as a sample distribution, not exact prevalence unless it is a full pass.\n"
+    "- Cross-dataset generalization claim: use at least 5 materially different "
+    "datasets and at least 30 files per dataset, total at least 150. Include "
+    "photo-heavy, graphic-heavy, mixed, dark/cinematic, and property/catalog regimes "
+    "when available.\n"
+    "- Threshold calibration claim: do not set or defend a production numeric gate "
+    "from a tiny ad-hoc test. Use at least 200 labeled/reference examples, existing "
+    "machine-readable reference records, or synthetic tests with predefined acceptance "
+    "criteria; otherwise describe the value only as a candidate default.\n"
+    "- Rare failure or safety claim: a small random test can find a failure, but cannot "
+    "prove absence. Use a full pass, targeted search, or state the risk is unassessed.\n"
+    "- Diversity or duplicate behavior claim: include at least three relation types "
+    "(exact/re-encode, near same-content, visually similar but distinct), ideally at "
+    "least 10 pairs per type or existing annotated relation records.\n"
+    "If your test is below the needed size for the claim, explicitly downgrade the "
+    "claim: validated -> hypothesis, threshold -> candidate default, general rule -> "
+    "observed in a small sample, safe -> not assessed."
+)
+
+
+_ROUND_MESSAGE_TOKEN_BUDGET = 900_000
+
+
+def _approx_tokens(text: str) -> int:
+    return len(text) // 4
+
+
+def _fit_transcript_to_budget(
+    constrained_question: str,
+    all_rounds_turns: list[list[dict[str, Any]]],
+    own_agent: str | None,
+    budget: int = _ROUND_MESSAGE_TOKEN_BUDGET,
+) -> tuple[str, int]:
+    """Builds the discussion transcript for a round message, dropping the earliest whole
+    rounds (never touching `constrained_question` -- round 1's task description) until
+    the estimated token count fits `budget`. This only shapes what a given round's Agent
+    loop is fed; the full history is always kept intact in the meeting's saved record
+    (steps/turns), so nothing here is actually lost, only left out of this one prompt."""
+    rounds = list(all_rounds_turns)
+    while True:
+        transcript = _round_transcript(rounds, own_agent=own_agent)
+        estimate = _approx_tokens(constrained_question) + _approx_tokens(transcript)
+        if estimate <= budget or len(rounds) <= 1:
+            return transcript, len(all_rounds_turns) - len(rounds)
+        rounds = rounds[1:]
 
 
 def _build_planning_round_message(
     question: str,
     round_num: int,
     all_rounds_turns: list[list[dict[str, Any]]],
-) -> str:
+    own_agent: str | None = None,
+    budget: int = _ROUND_MESSAGE_TOKEN_BUDGET,
+) -> tuple[str, int]:
+    """Returns (message, dropped_rounds) -- dropped_rounds is always 0 for round 1
+    (there's no transcript yet to trim), and lets callers record what happened to this
+    turn's context (see _run_planning_participant_turn's context_meta)."""
+    constrained_question = _question_with_planning_constraints(question)
     if round_num == 1:
         return (
-            f"{question}\n\n"
+            f"{constrained_question}\n\n"
             f"=== Round {round_num} ===\n"
             "Contribute your points, suggestions and ideas for how to approach this. "
             "Remember: no Plan, no pipeline, no step-by-step design -- ideas and "
-            "considerations only."
-        )
+            "considerations only.\n\n"
+            f"{_EVIDENCE_BACKED_DISCUSSION_ADDENDUM}\n\n"
+            f"{_HANDOFF_CONTINUITY_ADDENDUM}"
+        ), 0
 
-    transcript = _round_transcript(all_rounds_turns)
-    return (
-        f"=== Original meeting question ===\n{question}\n\n"
-        f"=== Discussion so far (all participants, all rounds) ===\n{transcript}\n\n"
+    transcript, dropped_rounds = _fit_transcript_to_budget(
+        constrained_question, all_rounds_turns, own_agent, budget,
+    )
+    omission_note = (
+        f"\n(Note: the earliest {dropped_rounds} round(s) of this transcript were left out "
+        "here to stay within this turn's context budget. Nothing is actually lost -- the "
+        "full discussion is preserved in the meeting's saved record.)\n"
+        if dropped_rounds
+        else ""
+    )
+    message = (
+        f"=== Original meeting question ===\n{constrained_question}\n\n"
+        f"=== Discussion so far (all participants, all rounds) ==={omission_note}\n{transcript}\n\n"
         f"=== Round {round_num} ===\n"
         "Building on the discussion so far, refine or add new points, suggestions and "
         "ideas. You may agree, disagree, or extend what others said. Still no Plan or "
         "pipeline -- ideas and considerations only. You MUST call submit_round_answer "
         "to finish this round -- state what you changed and why in "
         "changes_from_prior_round (write 'No changes' if you kept your prior "
-        "position), and give your full current position in answer."
+        "position), and give your full current position in answer.\n\n"
+        f"{_EVIDENCE_BACKED_DISCUSSION_ADDENDUM}\n\n"
+        f"{_HANDOFF_CONTINUITY_ADDENDUM}"
     )
+    return message, dropped_rounds
+
+
+_CONTEXT_OVERFLOW_MARKERS = (
+    "context_length_exceeded",
+    "maximum context length",
+    "context length",
+    "context window",
+    "context_window_exceeded",
+    "too many tokens",
+    "reduce the length of the messages",
+    "input is too long",
+    "prompt is too long",
+)
+
+
+def _is_context_overflow_error(exc: Exception) -> bool:
+    """Best-effort, provider-agnostic sniff of the exception text. OpenAI-compatible
+    APIs (which every provider this project uses goes through -- see llm.py) return a
+    400 whose message contains one of these phrases when the request itself is too
+    large for the model; that error isn't in llm.py's `_is_transient` retry set (it
+    isn't transient -- retrying the identical request would just fail again), so it
+    propagates straight up to us unless we specifically look for it here."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _CONTEXT_OVERFLOW_MARKERS)
+
+
+_CONTEXT_OVERFLOW_MAX_RETRIES = 3
 
 
 def _run_planning_participant_turn(
@@ -644,13 +895,47 @@ def _run_planning_participant_turn(
     round_num: int,
     all_rounds_turns: list[list[dict[str, Any]]],
     verbose: bool,
+    participant_addendum: str,
 ) -> dict[str, Any]:
-    round_message = _build_planning_round_message(question, round_num, all_rounds_turns)
-    return _execute_turn(
-        participant, round_message, meeting_id, round_num, verbose,
-        decided_by="script", round_aware=round_num > 1,
-        extra_system_prompt=_IDEAS_ONLY_ADDENDUM,
-    )
+    budget = _ROUND_MESSAGE_TOKEN_BUDGET
+    overflow_errors: list[str] = []
+    for attempt in range(_CONTEXT_OVERFLOW_MAX_RETRIES + 1):
+        round_message, dropped_rounds = _build_planning_round_message(
+            question, round_num, all_rounds_turns, own_agent=participant.name, budget=budget,
+        )
+        # Saved onto the turn dict (next to session_id/session_path) so the meeting's
+        # saved record shows, for every turn, whether its context was trimmed and
+        # whether a context-overflow error/retry happened to get here -- without this,
+        # only the final round_message that succeeded would be visible in the session.
+        context_meta = {
+            "round_message_token_budget": budget,
+            "round_message_tokens_approx": _approx_tokens(round_message),
+            "dropped_rounds": dropped_rounds,
+            "context_overflow_retries": attempt,
+            "context_overflow_errors": list(overflow_errors),
+        }
+        try:
+            return _execute_turn(
+                participant, round_message, meeting_id, round_num, verbose,
+                decided_by="script", round_aware=round_num > 1,
+                extra_system_prompt=participant_addendum,
+                context_meta=context_meta,
+            )
+        except Exception as exc:
+            # round 1 has no transcript to trim yet -- constrained_question itself is
+            # the whole message, and we deliberately never shrink that (it's round 1's
+            # task description), so retrying here can't help. Let it raise.
+            if round_num == 1 or attempt >= _CONTEXT_OVERFLOW_MAX_RETRIES or not _is_context_overflow_error(exc):
+                raise
+            overflow_errors.append(f"{type(exc).__name__}: {exc}")
+            budget //= 2
+            if verbose:
+                log(
+                    participant.name,
+                    f"round {round_num}: context window overflow ({type(exc).__name__}); "
+                    f"retrying with a tighter transcript budget (~{budget:,} tokens, "
+                    f"attempt {attempt + 2}/{_CONTEXT_OVERFLOW_MAX_RETRIES + 1})...",
+                )
 
 
 def _run_planning_round(
@@ -660,12 +945,23 @@ def _run_planning_round(
     all_rounds_turns: list[list[dict[str, Any]]],
 ) -> dict[str, Any]:
     step_start = now()
+    participant_addendum = (
+        config.planning_participant_addendum
+        if config.planning_participant_addendum is not None
+        else _IDEAS_ONLY_ADDENDUM
+    )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(config.participants))) as ex:
         futures = {
             ex.submit(
                 _run_planning_participant_turn,
-                p, config.question, meeting_id, round_num, all_rounds_turns, config.verbose,
+                p,
+                config.question,
+                meeting_id,
+                round_num,
+                all_rounds_turns,
+                config.verbose,
+                participant_addendum,
             ): p.name
             for p in config.participants
         }
@@ -694,7 +990,10 @@ def _run_judge_step(
         log("meeting", f"round {round_num}: all participant(s) done, asking judge whether to stop...")
 
     judge_start = now()
-    decision = judge_should_stop(config.question, _round_transcript(all_rounds_turns))
+    decision = judge_should_stop(
+        _question_with_planning_constraints(config.question),
+        _round_transcript(all_rounds_turns),
+    )
     judge_end = now()
 
     blocking = blocking_verdicts_this_round(all_rounds_turns[-1]) if all_rounds_turns else {}
@@ -766,7 +1065,35 @@ def _run_planner_step(
     all_rounds_turns: list[list[dict[str, Any]]],
 ) -> dict[str, Any]:
     planner = config.planner
-    transcript = _round_transcript(all_rounds_turns)
+    meeting_shared_dir = shared_dir(meeting_id)
+
+    inline_rounds = config.planner_inline_rounds
+    if inline_rounds is None:
+        displayed_rounds = all_rounds_turns
+        earlier_rounds = []
+    else:
+        if inline_rounds < 1:
+            raise ValueError("planner_inline_rounds must be a positive integer or None")
+        displayed_rounds = all_rounds_turns[-inline_rounds:]
+        earlier_rounds = all_rounds_turns[:-inline_rounds]
+
+    displayed_transcript = _round_transcript(displayed_rounds)
+    full_transcript_note = ""
+    if earlier_rounds:
+        # Full transcript (every round) always goes to disk regardless of size -- a
+        # plain write, no LLM cost -- so nothing from earlier rounds is ever actually
+        # lost, even though only the recent tail is force-fed into the planner's
+        # context by default. Mirrors this codebase's own compact_messages pattern
+        # (recent raw + older reachable on demand) instead of a one-off truncation.
+        full_transcript = _round_transcript(all_rounds_turns)
+        transcript_path = meeting_shared_dir / "full_discussion_transcript.md"
+        transcript_path.parent.mkdir(parents=True, exist_ok=True)
+        transcript_path.write_text(full_transcript, encoding="utf-8")
+        full_transcript_note = (
+            f"\n\nThe full discussion transcript (all {len(all_rounds_turns)} rounds, "
+            f"all participants) is saved at {transcript_path} -- read it with read_file "
+            "if you need something from an earlier round not shown below."
+        )
 
     if config.verbose:
         log("meeting", f"planner ({planner.name}): synthesizing final Plan from {len(all_rounds_turns)} round(s)...")
@@ -774,11 +1101,14 @@ def _run_planner_step(
     recorder = TurnRecorder(agent=planner.name, round_num=0, decided_by="planner")
     ui = TrajectoryUI(recorder, verbose=config.verbose)
 
+    planner_shared_dir = participant_shared_dir(meeting_id, planner.name)
     system_prompt = planner.system_prompt or _default_planner_system_prompt(planner)
-    meeting_shared_dir = shared_dir(meeting_id)
     system_prompt += (
         f"\n\nShared meeting files: {meeting_shared_dir} is a shared directory for this "
-        "meeting -- you may read anything participants left there while forming the plan."
+        "meeting -- you may READ anything participants left there (each in their own "
+        f"subfolder) while forming the plan. If you need to write something there "
+        f"yourself, your own subfolder is {planner_shared_dir}."
+        f"\n\n{_AUTOMATION_ONLY_TASK_CONSTRAINTS}"
     )
 
     registry = build_participant_registry(role_backed=False, round_aware=False)
@@ -787,9 +1117,19 @@ def _run_planner_step(
     session_path = sessions_dir(meeting_id) / f"{planner.name}.json"
     workspace_root = participant_workspace_dir(meeting_id, planner.name)
 
+    discussion_heading = (
+        f"Full Discussion (all {len(displayed_rounds)} round(s), all participants)"
+        if not earlier_rounds
+        else (
+            f"Recent Discussion (last {len(displayed_rounds)} round(s), "
+            "all participants)"
+        )
+    )
     user_message = (
-        f"=== Task ===\n{config.question}\n\n"
-        f"=== Full Discussion Transcript (all rounds, all participants) ===\n{transcript}\n\n"
+        f"=== Task ===\n{_question_with_planning_constraints(config.question)}\n\n"
+        f"=== {discussion_heading} ===\n"
+        f"{displayed_transcript}"
+        f"{full_transcript_note}\n\n"
         "Write the final Plan now."
     )
 
@@ -805,7 +1145,7 @@ def _run_planner_step(
         sub_agent=True,
         agent_role="planner",
         workspace_root=workspace_root,
-        shared_roots=[meeting_shared_dir],
+        shared_roots=[planner_shared_dir],
     )
     agent.llm = LoggingLLMClient(agent.llm, recorder, ui)
 
@@ -839,26 +1179,41 @@ def _run_planning_rounds(
     start_round: int = 1,
     initial_steps: list[dict[str, Any]] | None = None,
     initial_all_rounds_turns: list[list[dict[str, Any]]] | None = None,
+    max_rounds_override: int | None = None,
 ) -> list[dict[str, Any]]:
     all_steps: list[dict[str, Any]] = list(initial_steps or [])
     all_rounds_turns: list[list[dict[str, Any]]] = list(initial_all_rounds_turns or [])
-    max_rounds = max(1, config.max_rounds)
+    max_rounds = max(1, max_rounds_override if max_rounds_override is not None else config.max_rounds)
 
-    for round_num in range(start_round, max_rounds + 1):
-        round_step = _run_planning_round(config, meeting_id, round_num, all_rounds_turns)
-        all_rounds_turns.append(round_step["turns"])
-        all_steps.append(round_step)
+    # A resumed run (e.g. the planner crashed -- invalid model name, API error -- after
+    # the judge had already recorded stop=True) must not re-enter the round loop: the
+    # judge's stop decision already lives in initial_steps, and start_round..max_rounds
+    # being non-empty here only means "there was room left in the original max_rounds
+    # budget," not "more discussion is wanted." Blindly looping would silently run
+    # extra, unrequested rounds instead of just cheaply re-doing the one thing that
+    # actually failed (planning). max_rounds_override (an explicit extra_rounds=
+    # reopen) is the one case that's supposed to add more rounds despite a prior stop,
+    # so it deliberately bypasses this check.
+    already_stopped = bool(all_steps) and all_steps[-1].get("decided_by") == "judge" and bool(
+        all_steps[-1]["turns"][0].get("stop")
+    )
 
-        should_stop, judge_step = _run_judge_step(config, round_num, all_rounds_turns)
-        all_steps.append(judge_step)
+    if not (already_stopped and max_rounds_override is None):
+        for round_num in range(start_round, max_rounds + 1):
+            round_step = _run_planning_round(config, meeting_id, round_num, all_rounds_turns)
+            all_rounds_turns.append(round_step["turns"])
+            all_steps.append(round_step)
 
-        for i, step in enumerate(all_steps):
-            step["step_index"] = i
-        if checkpoint is not None:
-            checkpoint(all_steps)
+            should_stop, judge_step = _run_judge_step(config, round_num, all_rounds_turns)
+            all_steps.append(judge_step)
 
-        if should_stop:
-            break
+            for i, step in enumerate(all_steps):
+                step["step_index"] = i
+            if checkpoint is not None:
+                checkpoint(all_steps)
+
+            if should_stop:
+                break
 
     planner_step = _run_planner_step(config, meeting_id, all_rounds_turns)
     all_steps.append(planner_step)
