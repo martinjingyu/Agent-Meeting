@@ -214,6 +214,43 @@ class TrajectoryUI:
         pass
 
 
+def _redact_message_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Returns a copy of `messages` with any image_url data URIs (e.g. injected by
+    research_agent's view_image tool) replaced by a short placeholder. The real bytes
+    can be tens of KB to a few MB per image, and because the full accumulated message
+    history gets resent on every LLM call within a turn, storing them verbatim in the
+    turn's saved record (runs/<meeting_id>.json) would multiply that many times over
+    for no benefit -- nothing here changes what's actually sent to the API, which
+    always gets the original, unredacted `messages`; only the copy written into the
+    meeting's saved record goes through this."""
+    redacted: list[dict[str, Any]] = []
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            redacted.append(msg)
+            continue
+        new_content: list[Any] = []
+        changed = False
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "image_url":
+                image_url = part.get("image_url")
+                url = image_url.get("url") if isinstance(image_url, dict) else image_url
+                size = len(url) if isinstance(url, str) else 0
+                new_content.append({
+                    "type": "image_url",
+                    "image_url": (
+                        f"[redacted image data, {size} base64 chars -- not stored "
+                        "in the meeting record to keep runs/<meeting_id>.json a "
+                        "reasonable size]"
+                    ),
+                })
+                changed = True
+            else:
+                new_content.append(part)
+        redacted.append({**msg, "content": new_content} if changed else msg)
+    return redacted
+
+
 class LoggingLLMClient:
     """Wraps a real LLMClient instance to log the exact messages sent on every .chat() call."""
 
@@ -247,7 +284,7 @@ class LoggingLLMClient:
             "seq": self._recorder.next_seq(),
             "type": "llm_call",
             "iteration": self._ui.iteration,
-            "request_messages": messages,
+            "request_messages": _redact_message_images(messages),
             "response_text": message.content,
             "response_tool_calls": tool_calls,
             "start_time": _iso(start),

@@ -8,11 +8,16 @@ stopped, a dedicated Planner agent synthesizes the entire multi-round discussion
 the final Plan and writes it to disk. See agent_meeting/runner.py's
 _run_planning_rounds/_run_judge_step/_run_planner_step and agent_meeting/judge.py.
 
-Model split (fixed by the framework, not configured here): participants run on
-DeepSeek v4 Pro; the judge runs on Codex gpt-5.5 (agent_meeting/judge.py); the planner
-runs on Codex gpt-5.6-sol at high thinking via research_agent's codex credentials,
-since only the planner needs to reason over the whole transcript and produce
-something implementation-ready.
+Model split: the four domain participants (VisionCriteria/CPUPipeline/
+DiversityRanking/GalleryCurator) run on DeepSeek v4 Pro; VisualAuditor -- the
+participant that actually opens image files with the view_image tool and grounds
+other participants' visual claims against real pixels -- runs on Codex gpt-5.5,
+since DeepSeek v4 Pro has no confirmed vision support and only Codex's Responses
+API path in this codebase can actually deliver image content to the model; the
+judge runs on Codex gpt-5.5 (agent_meeting/judge.py, fixed by the framework, not
+configured here); the planner runs on Codex gpt-5.6-sol at high thinking via
+research_agent's codex credentials, since only the planner needs to reason over the
+whole transcript and produce something implementation-ready.
 
 Run with:
     C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_pipeline_planning_rounds.py
@@ -38,25 +43,16 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from agent_meeting import MeetingConfig, ParticipantConfig, run_meeting
 from agent_meeting.config import PlannerConfig
+# Private, but reused rather than duplicated -- this is the framework's default
+# planning_rounds extra_system_prompt; we only want to ADD the VisualAuditor note
+# below, not replace it, and copying its text here would drift the moment runner.py's
+# copy is edited.
+from agent_meeting.runner import _IDEAS_ONLY_ADDENDUM
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_cn.txt"
-RECON_REPORT_ROOT = Path(r"C:\Users\LX034\Code\DataBase\两次report\7_20_exp_report_multi_role_2")
-
-# (relative path, "especially relevant to" hint) -- the hint names which
-# participant(s) below should treat that report as a priority read in round 1,
-# not an exclusive assignment: anyone may still open anything under the root.
-RECON_ENTRYPOINTS = [
-    ("synthesis/report.md", "everyone (index/conflict map -- not a substitute for a concrete report)"),
-    ("synthesis/records/dataset_matrix.csv", "everyone"),
-    ("synthesis/records/agreements_disagreements.csv", "Skeptic"),
-    ("automation_probe/report.md", "CPUPipeline"),
-    ("carousel_quality_analyst/report.md", "GalleryCurator, VisionCriteria"),
-    ("corpus_cartographer/report.md", "DiversityRanking, CPUPipeline"),
-    ("duplicate_diversity_analyst/report.md", "DiversityRanking"),
-    ("graphic_text_risk_analyst/report.md", "VisionCriteria, Skeptic"),
-    ("visual_taxonomist/report.md", "VisionCriteria"),
-]
+RECON_REPORT_ROOT = Path(r"C:\Users\LX034\Code\DataBase\reports-20 groups")
+RECON_REPORT_FILES = ["report_1.md", "report_2.md", "report_3.md"]
 
 MEETING_INSTRUCTIONS = """\
 === 会议目标 ===
@@ -64,7 +60,7 @@ MEETING_INSTRUCTIONS = """\
 选图算法（含其中的固定高度横向 carousel 展示形态约束）校准出一份可执行方案。
 
 这是一次规划（planning）会议，不是执行会议。目标是产出一份具体、可直接交给后续
-Executor 执行的方案。你不需要（也不应该）跑完整的 61958 张图片的全量 pipeline。
+Executor 执行的方案。你不需要（也不应该）跑完整的图片的全量 pipeline。
 
 这次会议的流程和以往不同：每一轮你只需要给出要点、建议和想法，不要自己写出
 最终方案、pipeline 设计或分步骤实现顺序 —— 那是会议结束后由专门的 Planner
@@ -130,37 +126,72 @@ shared/env_capability_probe.md），供其他人直接读取、不用重复探�
 
 
 def build_recon_guidance() -> str:
-    lines = [
-        "=== Recon Evidence Pack: selected multi-role probing report ===",
-        f"Selected report root: {RECON_REPORT_ROOT}",
+    sections = ["\n".join([
+        "The following is the full Stage-1 reconnaissance synthesis (three combined",
+        "reports), provided inline so every participant starts from the same evidence",
+        "without needing to open any file.",
         "",
-        "Only use this one selected probing run for this meeting. Do not mix in the other probing report unless the meeting explicitly asks for cross-run comparison.",
-        "Every participant has permission to inspect any file under the selected report root. Do not only read synthesis/report.md. Treat synthesis as an index and conflict map; your primary evidence should come from whichever concrete role report(s), records, scripts, logs, and examples you decide are most relevant to the claim you are making.",
+        "Stage-1 material may inform corpus scale, risks, candidate experiments, runtime",
+        "planning, and falsification cases. It must not become a dataset-name exception",
+        "or replace per-image visual judgment.",
         "",
-        "Requirement for every participant, every round (not just round 1):",
-        "- Decide for yourself which Stage-1 probing dimension(s) to inspect before making a material claim.",
-        "- Open at least one concrete Stage-1 probing report or record under the selected root; do not rely only on the synthesis summary, and do not coast on a report you opened in an earlier round if this round's claim needs different evidence.",
-        "- Briefly explain why you chose those Stage-1 artifact(s) for your role and for the current round's issue.",
-        "- Cite the exact file path(s) you used and state whether the evidence is a census, deterministic full pass, sample, feasibility test, or untested hypothesis.",
-        "- If a probing report recommends manual review, do not copy that into the final pipeline. Convert it into an automated policy such as AUTO_EXCLUDE, AUTO_QUARANTINE, ABSTAIN_FROM_GALLERY, audit_log_only, or a falsification/metric requirement.",
-        "- If you disagree with a probing finding, run or propose a small reproducible counter-test against the artifact, not a subjective objection.",
-        "",
-        "Suggested entrypoints, not exclusive assignments -- the 'especially relevant to' hint tells you which",
-        "report to prioritize opening in round 1 given your own role; anyone may still open anything else below:",
-    ]
-    for rel_path, hint in RECON_ENTRYPOINTS:
-        lines.append(f"- {RECON_REPORT_ROOT / rel_path}  (especially relevant to: {hint})")
-    lines.extend([
-        "",
-        "You may also inspect any records/, examples/, review_materials/, scripts, or logs under the same selected root when they are relevant.",
-    ])
-    return "\n".join(lines)
+        "Previously verified facts below may be reused directly. Architecture ideas may",
+        "still be proposed as hypotheses when their evidence status is clear.",
+    ])]
+    for filename in RECON_REPORT_FILES:
+        text = (RECON_REPORT_ROOT / filename).read_text(encoding="utf-8")
+        sections.append(f"--- {filename} ---\n{text.strip()}")
+    return "\n\n".join(sections)
 
 
 def build_question() -> str:
     task_spec = TASK_SPEC_PATH.read_text(encoding="utf-8")
     probing = build_recon_guidance()
     return MEETING_INSTRUCTIONS.format(task_spec=task_spec, probing=probing)
+
+
+VISUAL_AUDITOR_MEETING_BRIEF = """\
+Every round, before writing your position:
+
+1. Check every other participant's own shared subfolder (you can read all of
+   them -- see the shared-directory note in your system prompt) for a file named
+   image_review_request.md. If present, it names specific image file paths and a
+   question -- call view_image on each named path and answer their specific
+   question using what you actually see.
+2. If no participant has an outstanding request this round, self-sample: pick a
+   handful of images yourself (favor boundary cases, or a claim other
+   participants have repeated across rounds without anyone having actually
+   opened a file) -- use list_files/search_files under C:\\pics if you need to
+   find candidates, then view_image each one you choose.
+3. For every image you open, report: the exact file path, what you actually
+   observed, and whether it confirms, corrects, or supplements a specific claim
+   made earlier in the discussion (name the participant and the claim) -- or,
+   for self-sampled images, why you chose them and what they show.
+4. Save the same findings to a file in your own shared subfolder (e.g.
+   visual_audit_round<N>.md) so they're archived even if a future round's
+   transcript gets trimmed for space.
+
+You are not a general skeptic -- do not challenge architecture choices,
+thresholds, or scope decisions that don't hinge on what an actual image shows.
+Stay narrowly focused on: is this specific visual claim true, false, or
+unverified, based on pixels you looked at yourself this meeting.
+"""
+
+# Adds the VisualAuditor request protocol on top of (not instead of) the
+# framework's default ideas-only framing, so every participant -- not just
+# VisualAuditor -- knows requests are possible.
+PARTICIPANT_DISCUSSION_ADDENDUM = (
+    _IDEAS_ONLY_ADDENDUM
+    + "\n\n"
+    + (
+        "This meeting includes VisualAuditor, a participant that can actually open "
+        "image files and report what they show. If a claim in this discussion hinges "
+        "on what a specific image or set of images actually looks like and you want "
+        "it checked, write a request naming the exact file path(s) and your question "
+        "to image_review_request.md in your own shared subfolder. VisualAuditor "
+        "checks every participant's shared subfolder for this file each round."
+    )
+)
 
 
 def main() -> None:
@@ -180,7 +211,7 @@ def main() -> None:
     config = MeetingConfig(
         question=build_question(),
         mode="planning_rounds",
-        max_rounds=10,
+        max_rounds=3,
         participants=[
             ParticipantConfig(
                 name="VisionCriteria",
@@ -211,13 +242,20 @@ def main() -> None:
                 **participant_defaults,
             ),
             ParticipantConfig(
-                name="Skeptic",
-                role="Constraint auditor challenging unsupported or invalid ideas",
-                role_ref="skeptic-reviewer",
-                max_iterations=12,
-                **participant_defaults,
+                name="VisualAuditor",
+                role="Grounds other participants' visual claims by actually opening images",
+                role_ref="visual-evidence-auditor",
+                meeting_brief=VISUAL_AUDITOR_MEETING_BRIEF,
+                # Must be codex, not deepseek -- this is the only provider path in
+                # this codebase that can actually deliver image content to the model
+                # (research_agent's Responses API image support + view_image tool).
+                model="gpt-5.5",
+                provider="codex",
+                reasoning_effort="high",
+                max_iterations=16,
             ),
         ],
+        planning_participant_addendum=PARTICIPANT_DISCUSSION_ADDENDUM,
         planner=PlannerConfig(
             name="Planner",
             model="gpt-5.6-sol",
