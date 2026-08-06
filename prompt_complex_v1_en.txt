@@ -1,0 +1,76 @@
+You are a programming agent responsible for image data cleaning, visual screening, and engineering implementation. You need to complete a reproducible, reviewable, and generalizable website gallery image selection task in a local code environment.
+
+Task background and input environment:
+* The goal of this task is to directly select real-world photographic images that are suitable for display in an official website gallery from multiple image datasets.
+* The root directory of the image datasets is: `C:\pics`
+* Each first-level subfolder under the root directory represents an independent image dataset.
+* Each dataset may contain multiple nested subdirectories, different image formats, different resolutions, corrupted files, duplicate or near-duplicate images.
+* Do not assume that the directory structure, number of files, image formats, naming rules, or data sources follow any fixed pattern.
+* Do not use filenames, directory names, EXIF data, source paths, creation times, modification times, or any other non-visual information as classification criteria for whether an image is suitable for official website gallery display.
+* This task should rely only on the visual content of the image itself, image quality, realism, display appeal, and diversity. It is not responsible for copyright review, brand compliance review, portrait authorization review, or final human publishing approval.
+
+Local execution environment:
+* Operating system: Windows 10 Enterprise, version 10.0.19045, Build 19045
+* Terminal environment: PowerShell
+* Machine model: HP Pro Tower ZHAN 99 G9 Desktop PC
+* CPU: 12th Gen Intel(R) Core(TM) i5-12500, 6 cores and 12 threads
+* Memory: approximately 31.69 GB
+* GPU: Intel(R) UHD Graphics 770 integrated graphics
+* No NVIDIA GPU detected; `nvidia-smi` is unavailable
+* PyTorch: CPU version, `torch 2.12.0+cpu`
+* CUDA is unavailable
+* The solution should prioritize compatibility with a CPU-only environment and avoid relying on CUDA, NVIDIA GPUs, or large-scale deep learning inference.
+* While maintaining selection quality, try to control inference time, memory usage, dependency size, and installation complexity as much as possible.
+
+Core objective:
+Please directly select the top 100 real-world photographic images from each image dataset that are most suitable for display in an official website gallery. At the same time, record samples judged as non-real-world images, low-confidence real-world images, low-quality images, unsuitable for public display, or excluded due to duplication or excessive similarity, so that they can be reviewed manually later.
+
+Judgment requirements:
+* An image suitable for an official website gallery should simultaneously have high real-world photographic credibility, good visual quality, strong display appeal, and a certain degree of content representativeness.
+* A “real-world photographic image” should be judged based on the visual content of the image itself. Focus primarily on whether it presents visual content from the real world that could be captured by a camera, such as natural scenes, urban environments, indoor or outdoor spaces, human activities, photographed objects, transportation, architecture, landscapes, and similar real-world content.
+* Images selected for the official website gallery should, on the basis of being real-world photographic images, have value for public display. For example, the image should look natural, have reasonably good clarity, appropriate exposure, identifiable subjects or scenes, stable composition, comfortable visual appearance, and no obvious abnormal or low-quality issues.
+* “Non-real-world images” should be judged based on visual features. They typically include, but are not limited to, illustrations, comics, anime, 3D renderings, game screenshots, pure graphic designs, icons, UI screenshots, text posters, images with an obvious AI-generated style, collages, diagrams, tables, overly composited images, or other images that clearly do not belong to real scenes captured by a camera.
+* Samples unsuitable for official website gallery display may include images that are obviously blurry, severely overexposed or underexposed, have unrecognizable subjects, severe compression artifacts, abnormal composition, severe occlusion, obvious visual noise, high duplication, too many similar scenes, poor visual appeal, or other issues that affect public display quality.
+* For borderline samples, preserve reviewable information. Do not handle them in an overly arbitrary or unexplainable way.
+* The judgment logic should be generalizable and must not be hardcoded for specific files, naming patterns, datasets, or examples in the current directory.
+* Do not predefine a set of fixed features, fixed thresholds, fixed category lists, or fixed file rules that only apply to the current data. The implementation should allow later adjustment and review based on new datasets.
+* This task should not claim to automatically complete copyright review, brand review, portrait rights review, legal compliance review, or final human publishing decisions. The output should serve as an engineering-based preliminary screening and review basis for official website gallery image selection.
+
+Preferences:
+* The final top 100 images should follow a relatively conservative selection standard. Only images that simultaneously have high real-world photographic credibility, good visual quality, and clear display value should enter the final gallery results.
+* For borderline samples, prefer missing them or placing them into a low-confidence / needs-review list rather than selecting images with obviously poor visual appeal, low quality, abnormalities, strong non-realistic appearance, or insufficient display value into the final top 100.
+* The final selected images should prioritize samples with good overall visual appeal, including clear imagery, natural exposure, stable composition, clear subjects or scenes, comfortable visual appearance, and suitability for public display.
+* While ensuring real-world authenticity and image quality, pay attention to result diversity. Try to cover different scene types, spatial environments, subject content, shooting perspectives, colors, and composition styles.
+* Duplicate, near-duplicate, or highly similar images, as well as images with similar scenes, similar subjects, or similar compositions, should not occupy too large a proportion of the final top 100. Prefer keeping only a small number of the best-looking, highest-quality, and most representative samples among them.
+* The ranking logic should reflect the combined priority of “real-world photographic authenticity + display quality + official website display suitability + diversity,” rather than ranking only by a single real-world confidence score.
+* If a dataset contains fewer than 100 high-quality, real, and website-suitable images, do not include low-quality or unsuitable images merely to fill the quota. Output the actual number selected and record the reason for the shortage.
+* Among the final candidate images, try to prioritize landscapes, architecture, urban environments, indoor/outdoor spaces, multi-person activity scenes, or group images that are more suitable for official website gallery display. Under equal realism, image quality, and display suitability, single-person photos should not be prioritized. In particular, avoid having too many single-person close-ups, selfie-style photos, or images with overly isolated human subjects in the final results.
+
+Implementation constraints:
+* While maintaining selection quality, minimize processing time and computation cost as much as possible.
+* Do not use any model with more than 100M parameters.
+* Do not design a solution that depends on CUDA, NVIDIA GPUs, VRAM, or GPU-only inference.
+* You may combine lightweight vision models, basic image statistics, heuristic judgment, deduplication / near-duplicate removal, diversity selection, sample-based review, or human-readable reports, but non-visual information must not be used to judge whether an image is suitable for official website gallery display.
+* If using PyTorch, it must be compatible with the current CPU-only PyTorch environment. If using another inference framework, explain its availability in a Windows CPU environment.
+* The code should run in a Windows 10 + PowerShell environment and avoid dependencies on specific machines or information beyond the specified absolute path.
+* If third-party libraries or models are used, explain their purpose, installation method, model size constraint, offline/online requirements, and performance impact in a CPU-only environment.
+* Files that cannot be read, have abnormal formats, are corrupted, or are unsupported should be explicitly recorded rather than silently ignored.
+
+Output requirements:
+* Output reproducible runnable scripts.
+* Output a directory structure description explaining the meaning of the input directory, output directory, logs, statistics files, and result files.
+* For each dataset, output the final selected top 100 official website gallery images. If fewer than 100 images are selected, output the actual selected count and the reason.
+* For each dataset, output lists of images filtered out as non-real-world images, low-confidence samples, low-quality samples, unsuitable for official website gallery display, and samples not selected due to duplication or excessive similarity.
+* Output a statistical summary for each dataset, including total image count, successfully read count, abnormal file count, number of real-world photographic candidates, final selected count, number of non-real-world images, low-confidence count, low-quality count, unsuitable-for-display count, duplicate / near-duplicate count, and number of images down-ranked or removed due to similar scenes.
+* Output reviewable result details. At minimum, it should be possible to trace each image’s original relative path, dataset, judgment result, confidence or ranking basis, whether it entered the final top 100, and reason for not being selected.
+* Output sample-based quality check results, including the sampling method, sample size, main observed error types, and known risks.
+* All outputs should be convenient for human review. Do not output only internal model scores or unreadable intermediate results.
+* Result files should include human-readable fields whenever possible, such as real-world photographic confidence, image quality score, display suitability score, diversity / similarity handling result, main rejection reason, and final ranking.
+
+Working method requirements:
+* First provide a reasoned judgment framework for "real-world photographic images / non-real-world images / images suitable for official website gallery / images unsuitable for display", explaining visual evidence, borderline cases, display suitability, quality and cost trade-offs, diversity strategy, generalization design, and known risks.
+* Then provide the implementation plan and runnable code.
+* Before implementation, first inspect the data directory, Python environment, dependencies, and available hardware. Do not assume that all files are normal, all dependencies are installed, or all datasets contain enough images.
+* When modifying or generating code, keep it concise, modular, and reproducible. Avoid irrelevant features and over-engineering.
+* In the final response, explain how to run the scripts in PowerShell, where the outputs will be generated, how to review the results, and how to reuse the solution on new datasets.
+* If there are aspects that cannot be fully guaranteed, clearly state the limitations and risks. Do not exaggerate the selection accuracy.

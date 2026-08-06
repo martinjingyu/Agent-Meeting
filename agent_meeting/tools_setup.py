@@ -39,11 +39,32 @@ BACKGROUND_TOOL_NAMES: set[str] = {"run_background", "check_background"}
 # persistent memory) so it can't spawn new roles or read others' definitions mid-turn.
 ROLE_MANAGEMENT_TOOL_NAMES: set[str] = {"role_list", "role_load", "role_create"}
 
+# view_image works by injecting an image_url content part into the agent's own
+# messages (research_agent/agent.py's _inject_pending_images), which only the codex
+# provider's Responses API path (_codex_chat -> _to_responses_input) actually knows
+# how to deliver. Every other provider in this codebase (deepseek, plain openai) goes
+# through the generic chat.completions path, which forwards messages as-is -- and at
+# least DeepSeek's endpoint hard-rejects an image_url content part with a 400
+# ("unknown variant `image_url`, expected `text`"), crashing that participant's turn
+# and, since the framework has no per-participant crash isolation, the whole meeting.
+# Since view_image is a normal builtin tool with no provider awareness of its own, a
+# non-vision participant that happens to call it (nothing stops it -- the tool
+# description doesn't say "codex-only") takes the whole run down on its *next* call,
+# not even on the call that used the tool. Gate it here instead of trusting every
+# participant's model not to reach for it.
+VISION_TOOL_NAMES: set[str] = {"view_image"}
 
-def build_participant_registry(role_backed: bool = False, round_aware: bool = False) -> ToolRegistry:
+
+def build_participant_registry(
+    role_backed: bool = False,
+    round_aware: bool = False,
+    vision_capable: bool = False,
+) -> ToolRegistry:
     """round_aware=True swaps respond_to_user out for submit_round_answer (round >= 2
     finish tool, required changes_from_prior_round field) -- round 1 always finishes
-    via the normal respond_to_user."""
+    via the normal respond_to_user. vision_capable=True keeps view_image in the
+    registry -- pass this only for participants on a provider that can actually
+    deliver image content (currently just provider == "codex"; see VISION_TOOL_NAMES)."""
     load_builtin_tools()
     excluded = set(KANBAN_TOOL_NAMES) | set(BACKGROUND_TOOL_NAMES)
     if role_backed:
@@ -54,4 +75,6 @@ def build_participant_registry(role_backed: bool = False, round_aware: bool = Fa
     if round_aware:
         register_round_tools()
         excluded |= {"respond_to_user"}
+    if not vision_capable:
+        excluded |= VISION_TOOL_NAMES
     return registry.without(excluded)

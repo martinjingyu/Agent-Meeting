@@ -143,7 +143,7 @@ def main() -> None:
     # hardcoded this way in agent_meeting/judge.py); set explicitly here too so the
     # roster doesn't silently fall back to whatever model/provider each role's own
     # DEFINITION.md frontmatter happens to specify.
-    participant_defaults = dict(model="deepseek-v4-pro", provider="deepseek", reasoning_effort="high")
+    participant_defaults = dict(model="deepseek-v4-flash", provider="deepseek", reasoning_effort="high")
 
     config = MeetingConfig(
         question=build_question(),

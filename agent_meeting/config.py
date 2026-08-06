@@ -23,6 +23,16 @@ class ParticipantConfig:
     own DEFINITION.md + persistent memory drive the participant's identity, and
     model/provider/max_iterations fall back to the role's own frontmatter defaults
     when left unset here."""
+    vision_capable: bool = False
+    """Explicit opt-in for the view_image tool -- False (the default) for every
+    participant unless set True here. Not inferred from provider: even though only
+    provider="codex" can actually deliver image content today (see llm.py's
+    _codex_chat / _to_responses_input), this stays a separate manual switch so
+    enabling vision for a participant is always a deliberate per-participant choice
+    in the meeting script, not something that silently follows from picking a model.
+    Setting this True on a non-codex participant raises at turn-build time (see
+    runner.py._execute_turn) rather than deferring to a confusing provider-side 400
+    the first time that participant's own next call resends the image."""
 
     def build_system_prompt(self) -> str:
         if self.system_prompt:
@@ -66,6 +76,8 @@ class PlannerConfig:
     """Higher than a participant's default -- unlike participants (prose-only,
     ideas/suggestions), the planner actually writes the final Plan to disk via file
     tools, which can take a few tool-call iterations."""
+    vision_capable: bool = False
+    """Same explicit opt-in as ParticipantConfig.vision_capable -- see there."""
 
 
 @dataclass

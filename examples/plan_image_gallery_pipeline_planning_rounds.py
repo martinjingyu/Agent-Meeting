@@ -206,7 +206,7 @@ def main() -> None:
     # hardcoded this way in agent_meeting/judge.py); set explicitly here too so the
     # roster doesn't silently fall back to whatever model/provider each role's own
     # DEFINITION.md frontmatter happens to specify.
-    participant_defaults = dict(model="deepseek-v4-pro", provider="deepseek", reasoning_effort="high")
+    participant_defaults = dict(model="deepseek-v4-flash", provider="deepseek", reasoning_effort="high")
 
     config = MeetingConfig(
         question=build_question(),
@@ -253,6 +253,10 @@ def main() -> None:
                 provider="codex",
                 reasoning_effort="high",
                 max_iterations=16,
+                # The only participant here with view_image in its tool registry --
+                # every other participant defaults to vision_capable=False, so even
+                # if one of them tried to call it, it simply wouldn't be offered.
+                vision_capable=True,
             ),
         ],
         planning_participant_addendum=PARTICIPANT_DISCUSSION_ADDENDUM,

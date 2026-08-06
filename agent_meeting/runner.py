@@ -137,10 +137,20 @@ def _assemble_meeting_dict(
 
 
 def run_meeting(
-    config: MeetingConfig, resume: str | None = None, extra_rounds: int | None = None
+    config: MeetingConfig,
+    resume: str | None = None,
+    extra_rounds: int | None = None,
+    meeting_id: str | None = None,
 ) -> dict[str, Any]:
     """resume: pass a previous run's meeting_id (from a "FAILED" log line / a
     runs/<id>.json with status="in_progress") to continue it instead of starting over.
+
+    meeting_id: for a fresh run only (ignored/must be None when resume is set), use
+    this id instead of generating one with new_meeting_id(). Exists for callers that
+    need to know the id before the first round starts -- e.g. one that designs a
+    dynamic participant roster and must persist it somewhere resumable *before* any
+    round can crash, since a crash means run_meeting() never returns and the caller
+    never learns the id any other way.
 
     parallel_qa: already-completed rounds are skipped entirely; within the round that
     was in progress when it failed, participants that had already finished are reused
@@ -169,6 +179,9 @@ def run_meeting(
     re-synthesizes over the full (old + new) discussion. Ignored for any other mode,
     and for a resume that isn't reopening an already-"completed" meeting.
     """
+    if resume and meeting_id:
+        raise ValueError("pass either resume= or meeting_id=, not both")
+
     handlers: dict[str, Callable[..., list[dict[str, Any]]]] = {
         "parallel_qa": _run_parallel_qa,
         "moderator": _run_moderator,
@@ -265,7 +278,7 @@ def run_meeting(
                     f"{resume_state['moderator_session_id']} ({len(existing_steps)} step(s) already recorded)",
                 )
     else:
-        meeting_id = new_meeting_id()
+        meeting_id = meeting_id or new_meeting_id()
         created_at = now()
         if config.verbose:
             names = ", ".join(p.name for p in config.participants) or "(none pre-seeded)"
@@ -416,7 +429,18 @@ def _execute_turn(
     if extra_system_prompt:
         system_prompt += f"\n\n{extra_system_prompt}"
 
-    registry = build_participant_registry(role_backed=role is not None, round_aware=round_aware)
+    if participant.vision_capable and provider != "codex":
+        raise ValueError(
+            f"{participant.name}: vision_capable=True requires provider=\"codex\" "
+            f"(the only provider whose Responses API path can actually deliver image "
+            f"content -- see llm.py's _codex_chat), got provider={provider!r}. Fix the "
+            f"ParticipantConfig rather than letting this participant crash the meeting "
+            f"on its own next turn after view_image sends image content through a "
+            f"provider that rejects it."
+        )
+    registry = build_participant_registry(
+        role_backed=role is not None, round_aware=round_aware, vision_capable=participant.vision_capable,
+    )
     recorder.available_tools = sorted(registry.names)
 
     session_path = sessions_dir(meeting_id) / f"{participant.name}_r{round_num}.json"
@@ -1111,7 +1135,15 @@ def _run_planner_step(
         f"\n\n{_AUTOMATION_ONLY_TASK_CONSTRAINTS}"
     )
 
-    registry = build_participant_registry(role_backed=False, round_aware=False)
+    if planner.vision_capable and planner.provider != "codex":
+        raise ValueError(
+            f"{planner.name}: vision_capable=True requires provider=\"codex\", got "
+            f"provider={planner.provider!r} -- see ParticipantConfig.vision_capable's "
+            f"docstring for why this isn't inferred automatically."
+        )
+    registry = build_participant_registry(
+        role_backed=False, round_aware=False, vision_capable=planner.vision_capable,
+    )
     recorder.available_tools = sorted(registry.names)
 
     session_path = sessions_dir(meeting_id) / f"{planner.name}.json"

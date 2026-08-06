@@ -1,48 +1,45 @@
-"""Gallery-selection planning meeting with technology-domain participants.
+"""Same meeting as plan_image_gallery_technical_domains_rounds.py, with exactly one
+difference: the technology-domain roster (which domains exist, how many, and what
+each one's brief says) is not hand-picked -- it is designed at runtime by
+agent_meeting.role_architect.design_domain_roster() from the task spec and the same
+three Stage-1 evidence reports, before the meeting itself starts. That's the piece
+that makes this pipeline end-to-end: task + evidence in, a ready-to-run participant
+roster out, then straight into the same planning_rounds meeting.
 
-This example keeps the planning_rounds interaction intentionally prose-first:
-participants contribute free-form technical viewpoints, respond to each other, test
-claims when useful, and revise their positions over multiple rounds. They are grouped
-by technical domain rather than by stages of a pre-assumed filter-first pipeline.
-
-Compared with plan_image_gallery_pipeline_planning_rounds.py, this example:
-
-1. replaces the stage-oriented participant roster with technology-domain roles;
-2. removes the assumption that the answer must be a threshold-first linear pipeline;
-3. allows candidate technical compositions and architecture sketches while reserving
-   the adopted final Plan for the dedicated Planner;
-4. distinguishes the local <100M CPU constraint from optional external vision APIs;
-5. does not assume or request human labels, and limits empirical claims to evidence
-   available from deterministic facts, existing records, synthetic/programmatic tests,
-   stability tests, disagreement analysis, and set-level proxy metrics;
-6. gives only SystemsEvaluation the mandatory first-round environment survey;
-7. treats Stage-1 reports as reusable evidence, not as a file every participant must
-   reopen in every round;
-8. replaces Skeptic with VisualAuditor -- instead of abstract pushback (which also
-   had outsized influence via a REVISE/REJECT verdict that could override the
-   judge's stop decision), VisualAuditor actually opens image files with the
-   view_image tool and grounds other participants' visual claims against real
-   pixels. It runs on Codex gpt-5.5 (provider="codex", vision_capable=True) --
-   the six domain participants stay on DeepSeek v4 Pro, which has no confirmed
-   vision support and would crash if it ever reached for view_image (see
-   ParticipantConfig.vision_capable's docstring; that tool is only registered for
-   participants with vision_capable=True).
+Everything else -- MEETING_INSTRUCTIONS, TECHNOLOGY_LANDSCAPE (now also handed to
+the role architect as a reference menu, not a required list), the VisualAuditor
+participant, the Planner, the CLI flags -- is identical to
+plan_image_gallery_technical_domains_rounds.py. See that file's docstring for the
+full list of differences from plan_image_gallery_pipeline_planning_rounds.py.
 
 Run:
-    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_rounds.py
+    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_auto_roster.py
 
 Resume:
-    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_rounds.py --resume mtg_xxxxxxxxxx
+    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_auto_roster.py --resume mtg_xxxxxxxxxx
 
 Skip any unfinished discussion round and synthesize immediately from the last
 fully-checkpointed round:
-    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_rounds.py --resume mtg_xxxxxxxxxx --planner-only
+    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_auto_roster.py --resume mtg_xxxxxxxxxx --planner-only
 
 Reopen a completed meeting for more discussion:
-    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_rounds.py --resume mtg_xxxxxxxxxx --extra-rounds 2
+    C:\\Users\\LX034\\miniconda3\\python.exe examples\\plan_image_gallery_technical_domains_auto_roster.py --resume mtg_xxxxxxxxxx --extra-rounds 2
+
+Note on --resume: run_meeting(resume=...) does NOT restore config.participants from
+the checkpoint -- every round is built straight from whatever ParticipantConfig list
+the caller passes in, resumed or not (see runner.py's per-round ThreadPoolExecutor
+calls). So a dynamically-designed roster has to be made resumable by hand: the roster
+this script designs is written to runs/<meeting_id>_domain_roster.json *before* the
+first round starts (using run_meeting(meeting_id=...) to learn the id up front rather
+than after a successful return, so a mid-run crash still leaves the roster file next
+to the in-progress checkpoint). --resume/--extra-rounds/--planner-only load that same
+file and rebuild the identical participant list from it instead of calling the role
+architect again -- calling it again could return a different roster (it's an LLM
+call) whose names wouldn't match the transcript/shared-subfolders already on disk.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -51,12 +48,40 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from agent_meeting import MeetingConfig, ParticipantConfig, run_meeting
 from agent_meeting.config import PlannerConfig
-from agent_meeting.storage import load_meeting
+from agent_meeting.role_architect import DomainRole, design_domain_roster
+from agent_meeting.storage import load_meeting, meeting_path, new_meeting_id
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECON_REPORT_ROOT = Path(r"C:\Users\LX034\Code\DataBase\reports-20 groups")
 RECON_REPORT_FILES = ["report_1.md", "report_2.md", "report_3.md"]
+
+# Names already spoken for by fixed (non-domain) participants -- the role architect
+# doesn't know about them, so its output is checked against this set rather than
+# trusting it can't collide.
+_RESERVED_NAMES = {"VisualAuditor", "Planner"}
+
+
+def _roster_path(meeting_id: str) -> Path:
+    return meeting_path(meeting_id).with_name(f"{meeting_id}_domain_roster.json")
+
+
+def _save_roster(meeting_id: str, roster: list[DomainRole]) -> None:
+    payload = [{"name": r.name, "domain_brief": r.domain_brief} for r in roster]
+    _roster_path(meeting_id).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_roster(meeting_id: str) -> list[DomainRole]:
+    path = _roster_path(meeting_id)
+    if not path.exists():
+        raise SystemExit(
+            f"no saved domain roster at {path} -- this meeting wasn't started by this "
+            "script, or the roster file was removed; without it, --resume/--extra-rounds/"
+            "--planner-only cannot reconstruct the same participants the transcript "
+            "already references"
+        )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return [DomainRole(name=e["name"], domain_brief=e["domain_brief"]) for e in payload]
 
 
 PARTICIPANT_TASK_SPEC = """\
@@ -297,58 +322,6 @@ the discussion gets long; resist that.
 """
 
 
-DOMAIN_BRIEFS = {
-    "ClassicalVision": """\
-Classical image processing, spatial image structure, image forensics, and technical
-quality. Consider global and local color statistics, connected uniform regions,
-entropy maps, edge orientation, rectangular/grid layout, OCR/text layout, frequency
-signals, blur, exposure, compression, and the distinction between a photograph and
-webpage/slide/logo/UI/graphic content. Avoid assuming a single global scalar threshold
-is sufficient; examine spatial relationships, combinations, lightweight learned
-classifiers, and counterexamples such as sky, snow, fog, white walls, or embedded
-photos in slides.""",
-    "RepresentationModels": """\
-Learned visual representations and local models under the <100M CPU constraint.
-Consider CNN intermediate features, ImageNet classifiers, CLIP/MobileCLIP-style
-embeddings, self-supervised representations, lightweight semantic/quality/aesthetic
-models, feature fusion, and what these representations can or cannot express. Focus
-on generalization, domain shift, preprocessing, calibration, and interfaces to
-clustering, API routing, and final selection rather than assuming representation
-quality alone solves the task.""",
-    "SimilarityClustering": """\
-Image-to-image relationships: exact and near duplicate detection, perceptual hashes,
-SSIM, retrieval, k-NN graphs, same-scene grouping, micro/macro clustering, HDBSCAN,
-hierarchical methods, spherical k-means, k-medoids, outliers, medoids, cluster
-stability, and representative selection. Do not assume clustering must happen only
-after all per-image filtering. Examine where relationship-first or cluster-first
-reasoning improves on independent scalar scoring, and where clustering is unstable
-or adds no value.""",
-    "MultimodalVisionAPI": """\
-External visual APIs and multimodal models used after local candidate reduction.
-Consider real-photo verification, screenshot/slide/logo/CG/AI detection, scene and
-subject understanding, composition and display appeal, pairwise/listwise comparison,
-contact-sheet judging, harmful/sensitive content, and moderation. Treat API outputs
-as model judgments rather than ground truth. Address candidate budgets, cost, privacy,
-batch/order bias, nondeterminism, auditability, version drift, and pure-local fallback.""",
-    "RankingSelection": """\
-Final set construction rather than only per-image scoring. Consider MMR, DPP, facility
-location, submodular selection, cluster quotas, constrained optimization, family and
-scene caps, quality floors, representative coverage, person/subject balance, gallery
-cohesion, carousel geometry, first-screen behavior, and deterministic tie-breaking.
-Challenge the assumption that sorting one composite scalar necessarily produces the
-best collection of 100 images.""",
-    "SystemsEvaluation": """\
-Engineering feasibility and evaluation without human labels. In round 1, perform or
-coordinate a single shared survey of the current Windows CPU environment, relevant
-installed libraries/models, network/API assumptions, and reusable Stage-1 evidence;
-publish reusable findings under the meeting shared directory so other participants
-need not repeat them. Across later rounds, evaluate CPU/API cost, memory, batching,
-cache/recovery, privacy, determinism, synthetic and metamorphic tests, clustering
-stability, method disagreement, set-level proxy metrics, and fallback behavior.
-Do not define the overall architecture merely because one option is already installed.""",
-}
-
-
 VISUAL_AUDITOR_MEETING_BRIEF = """\
 Every round, before writing your position:
 
@@ -446,21 +419,21 @@ in your workspace using file tools, then respond with the same content.
 """
 
 
-def build_question() -> str:
+def build_question(probing: str) -> str:
     return MEETING_INSTRUCTIONS.format(
         participant_task_spec=PARTICIPANT_TASK_SPEC,
         technology_landscape=TECHNOLOGY_LANDSCAPE,
-        probing=build_recon_guidance(),
+        probing=probing,
     )
 
 
-def make_domain_participant(name: str) -> ParticipantConfig:
+def make_domain_participant(role: DomainRole) -> ParticipantConfig:
     return ParticipantConfig(
-        name=name,
-        role=f"Technology domain: {name}",
+        name=role.name,
+        role=f"Technology domain: {role.name}",
         system_prompt=COMMON_PARTICIPANT_PROMPT.format(
-            name=name,
-            domain=DOMAIN_BRIEFS[name],
+            name=role.name,
+            domain=role.domain_brief,
         ),
         model="deepseek-v4-flash",
         provider="deepseek",
@@ -487,16 +460,9 @@ def parse_cli() -> tuple[str | None, int | None, bool]:
     return resume, extra_rounds, planner_only
 
 
-def main() -> None:
-    resume, extra_rounds, planner_only = parse_cli()
-
-    participants = [
-        make_domain_participant("ClassicalVision"),
-        make_domain_participant("RepresentationModels"),
-        make_domain_participant("SimilarityClustering"),
-        make_domain_participant("MultimodalVisionAPI"),
-        make_domain_participant("RankingSelection"),
-        make_domain_participant("SystemsEvaluation"),
+def _build_participants(roster: list[DomainRole]) -> list[ParticipantConfig]:
+    participants = [make_domain_participant(role) for role in roster]
+    participants.append(
         ParticipantConfig(
             name="VisualAuditor",
             role="Grounds other participants' visual claims by actually opening images",
@@ -513,14 +479,48 @@ def main() -> None:
             # other participant defaults to vision_capable=False, so even if one of
             # them tried to call it, it simply wouldn't be offered.
             vision_capable=True,
-        ),
-    ]
+        )
+    )
+    return participants
+
+
+def main() -> None:
+    resume, extra_rounds, planner_only = parse_cli()
+    probing = build_recon_guidance()
+
+    if resume:
+        meeting_id = resume
+        roster = _load_roster(meeting_id)
+        print(f"[role-architect] reusing the {len(roster)}-domain roster saved for {meeting_id}:")
+        for role in roster:
+            print(f"  - {role.name}")
+    else:
+        meeting_id = new_meeting_id()
+        print("[role-architect] designing the technology-domain roster from the task spec + evidence...")
+        roster = design_domain_roster(
+            task_spec=PARTICIPANT_TASK_SPEC,
+            meeting_id=meeting_id,
+            technology_reference=TECHNOLOGY_LANDSCAPE,
+            evidence_paths=[RECON_REPORT_ROOT / filename for filename in RECON_REPORT_FILES],
+        )
+        for role in roster:
+            if role.name in _RESERVED_NAMES:
+                raise SystemExit(
+                    f"role architect chose {role.name!r}, which collides with a fixed "
+                    "participant name (VisualAuditor/Planner) -- rerun to get a fresh roster"
+                )
+        print(f"[role-architect] designed {len(roster)} domain(s):")
+        for role in roster:
+            print(f"  - {role.name}: {role.domain_brief.splitlines()[0][:100]}...")
+        # Written before run_meeting() is even called -- see the module docstring's
+        # note on --resume for why this can't wait until run_meeting() returns.
+        _save_roster(meeting_id, roster)
 
     config = MeetingConfig(
-        question=build_question(),
+        question=build_question(probing),
         mode="planning_rounds",
         max_rounds=5,
-        participants=participants,
+        participants=_build_participants(roster),
         planner_inline_rounds=None,
         planning_participant_addendum=PARTICIPANT_DISCUSSION_ADDENDUM,
         planner=PlannerConfig(
@@ -565,7 +565,12 @@ def main() -> None:
             "skipping unfinished/later rounds and starting Planner"
         )
 
-    result = run_meeting(config, resume=resume, extra_rounds=extra_rounds)
+    result = run_meeting(
+        config,
+        resume=resume,
+        extra_rounds=extra_rounds,
+        meeting_id=None if resume else meeting_id,
+    )
 
     print(f"\nmeeting_id: {result['meeting_id']}")
     print(f"saved to: runs/{result['meeting_id']}.json")
