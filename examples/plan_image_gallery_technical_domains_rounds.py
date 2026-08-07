@@ -429,16 +429,32 @@ Write the plan for readability before implementation detail:
 11. detailed thresholds, formulas, manifest fields, and directory layout in appendices
     rather than allowing them to obscure the main architecture.
 
-Within every section, write for a human reader, not a spec sheet. Explain each
-technique in a real clause (what it's for, why it was adopted or rejected here), not
-as a bare comma/slash-separated term dump -- "perceptual hashes like pHash to catch
-resized or recompressed copies" reads far better than "pHash/dHash/colorHash/SSIM".
-Prefer several shorter, plain sentences over one long chain of semicolon-joined
-clauses. You are synthesizing many rounds of discussion into one document -- resist
-the pull to compress everything back into dense term-listing shorthand just because
-that's a fast way to cram in coverage; push genuinely dense material (thresholds,
-formulas, manifest fields, directory layouts) into the appendices instead, exactly as
-item 11 above already asks, rather than letting it flatten the main sections' prose.
+Within every section, write like a senior engineer explaining this design to a
+colleague, not like you are filling out a spec template. That means:
+
+- Lead with reasoning, not just conclusions. Don't just state what was chosen --
+  show the thinking that got there: what the obvious first approach would be, why it
+  falls short given the evidence or constraints, and what that implies about the
+  approach you're adopting instead. A reader should be able to follow *why* each
+  major choice is correct, not just accept that it was made.
+- Write connected prose, not a list of disconnected facts stitched together with
+  semicolons. "We tried X hoping for Y; it didn't hold up because Z, so we moved to
+  W instead" reads as one continuous argument. "X. Y. Z. W." (or "X; Y; Z; W" as one
+  run-on sentence) reads as notes, not an explanation -- avoid both.
+  Use bullet points only for content that is genuinely list-shaped (e.g. a set of
+  parallel options), not as a substitute for explaining how ideas connect.
+- Explain each technique in a real clause (what it's for, why it was adopted or
+  rejected here), not as a bare comma/slash-separated term dump -- "perceptual
+  hashes like pHash to catch resized or recompressed copies" reads far better than
+  "pHash/dHash/colorHash/SSIM".
+- Don't repeat the same caveat or constraint verbatim in every section just to be
+  safe -- state it clearly once, where it's most load-bearing, and trust the reader
+  to carry it forward.
+- Push genuinely dense reference material (exact thresholds, formulas, manifest
+  fields, directory layouts) into the appendices per item 11 above, so the main
+  sections stay readable as an argument rather than a lookup table. But do not use
+  the appendices as an excuse to leave the main sections' own reasoning thin --
+  the appendix holds the *values*, the main section still owns the *why*.
 
 The plan must be detailed enough for an Executor to implement without making new
 methodology-level decisions. Save it as `final_gallery_selection_plan_technical_domains.md`

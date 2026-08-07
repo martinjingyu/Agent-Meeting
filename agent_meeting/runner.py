@@ -1078,8 +1078,19 @@ def _default_planner_system_prompt(planner: PlannerConfig) -> str:
         "between participants explicitly (state which view you're adopting and why) "
         "rather than listing them side by side unresolved. The plan should be detailed "
         "enough that another engineer could implement it without further "
-        "methodology-level decisions. Save the final Plan to a file in your workspace "
-        "using the file tools, then respond with the same Plan content."
+        "methodology-level decisions.\n\n"
+        "Write like a senior engineer explaining this design to a colleague, not like "
+        "you are filling out a spec template: lead each decision with the reasoning "
+        "that produced it (what the obvious first approach would be, why it falls "
+        "short, what you adopted instead) rather than stating a bare conclusion; "
+        "write connected prose instead of stitching disconnected facts together with "
+        "semicolons, saving bullets for content that is genuinely list-shaped; and "
+        "push dense reference material (exact thresholds, formulas, schemas) into an "
+        "appendix so the main sections stay readable as an argument, not a lookup "
+        "table -- but keep the reasoning itself in the main sections, not just the "
+        "values.\n\n"
+        "Save the final Plan to a file in your workspace using the file tools, then "
+        "respond with the same Plan content."
     )
 
 
