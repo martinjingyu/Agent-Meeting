@@ -481,7 +481,7 @@ def make_domain_participant(name: str) -> ParticipantConfig:
         model="deepseek-v4-flash",
         provider="deepseek",
         reasoning_effort="high",
-        max_iterations=12,
+        max_iterations=40,
     )
 
 
