@@ -535,7 +535,7 @@ def main() -> None:
     config = MeetingConfig(
         question=build_question(),
         mode="planning_rounds",
-        max_rounds=5,
+        max_rounds=10,
         participants=participants,
         planner_inline_rounds=None,
         planning_participant_addendum=PARTICIPANT_DISCUSSION_ADDENDUM,
