@@ -26,28 +26,29 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from agent_meeting import MeetingConfig, ModeratorConfig, ParticipantConfig, run_meeting
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_cn.txt"
-PROBING_PATH = REPO_ROOT / "stage1_handoff_zh.json"
+TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_en.txt"
+PROBING_PATH = REPO_ROOT / "stage1_handoff_en.json"
 
 MEETING_INSTRUCTIONS = """\
-=== 会议目标 ===
-这是一次规划（planning）会议，不是执行会议。目标是产出一份具体、可直接交给后续
-Executor 执行的方案。你不需要（也不应该）跑完整的 61958 张图片的全量 pipeline。
+=== Meeting goal ===
+This is a planning meeting, not an execution meeting. The goal is to produce a concrete plan that can be handed
+directly to a later Executor. You do not need to (and should not) run the full pipeline over all 61,958 images.
 
-允许做小规模验证：比如用 files/terminal 工具读取 C:\\pics 下某个数据集里的少量
-样本图片，跑一小段代码验证某个阈值、某个启发式指标或某个模型调用是否真的可行，
-用来支撑你的方案判断 —— 但不要尝试处理整个数据集或跑完整 pipeline。
+Small-scale verification is allowed: for example, using the files/terminal tools to read a small number of sample
+images from a dataset under C:\\pics and run a short piece of code to verify whether some threshold, heuristic
+metric, or model call is actually feasible, to support your judgment -- but do not attempt to process an entire
+dataset or run the full pipeline.
 
-作为主持人，你已经召集了 4 位规划专家和 1 位怀疑论评审（见 roster）。按你认为
-合适的顺序调用他们（可以不止一轮），必要时用 meeting_set_agenda / meeting_add_notes
-维护共享上下文，确保怀疑论评审至少在其他人给出初步方案后被问一次，用于挑战方案里
-不够扎实的假设。当你认为方案已经具体、可论证、经得起质疑时，用 meeting_conclude
-给出最终方案。
+As the moderator, you have convened 4 planning experts and 1 skeptical reviewer (see roster). Call on them in
+whatever order you think appropriate (more than one round is fine), using meeting_set_agenda / meeting_add_notes as
+needed to maintain shared context, and make sure the skeptical reviewer is asked at least once after the others have
+given an initial plan, to challenge any assumption in the plan that isn't solid enough. Once you judge the plan to be
+concrete, well-argued, and able to withstand scrutiny, use meeting_conclude to deliver the final plan.
 
-=== 任务原始要求 ===
+=== Original task requirements ===
 {task_spec}
 
-=== Stage 1 探索先验（已完成的数据集扫描结果，不需要重新探索） ===
+=== Stage 1 exploration priors (completed dataset scan results, no need to re-explore) ===
 {probing}
 """
 

@@ -50,77 +50,85 @@ from agent_meeting.config import PlannerConfig
 from agent_meeting.runner import _IDEAS_ONLY_ADDENDUM
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_cn.txt"
+TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_en.txt"
 RECON_REPORT_ROOT = Path(r"C:\Users\LX034\Code\DataBase\reports-20 groups")
 RECON_REPORT_FILES = ["report_1.md", "report_2.md", "report_3.md"]
 
 MEETING_INSTRUCTIONS = """\
-=== 会议目标 ===
-目标是摸清各数据集的实际内容，并为下面"任务原始要求"里描述的官网 gallery
-选图算法（含其中的固定高度横向 carousel 展示形态约束）校准出一份可执行方案。
+=== Meeting goal ===
+The goal is to understand the actual content of each dataset, and to calibrate an executable plan for the official-
+website gallery selection algorithm described below in "Original task requirements" (including its fixed-height
+horizontal carousel display-format constraint).
 
-这是一次规划（planning）会议，不是执行会议。目标是产出一份具体、可直接交给后续
-Executor 执行的方案。你不需要（也不应该）跑完整的图片的全量 pipeline。
+This is a planning meeting, not an execution meeting. The goal is to produce a concrete plan that can be handed
+directly to a later Executor. You do not need to (and should not) run the full pipeline over the entire image corpus.
 
-这次会议的流程和以往不同：每一轮你只需要给出要点、建议和想法，不要自己写出
-最终方案、pipeline 设计或分步骤实现顺序 —— 那是会议结束后由专门的 Planner
-角色来完成的事情。如果你发现自己在写"第一步/第二步"这种带编号的实现步骤，
-说明你已经越界了，应该把它改写成一条给 Planner 参考的建议。
+This meeting's process differs from before: each round you only need to give key points, suggestions, and ideas --
+do not write the final solution, pipeline design, or a numbered step-by-step implementation sequence yourself -- that
+is done after the meeting by a dedicated Planner role. If you notice yourself writing numbered implementation steps
+like "Step 1/Step 2", that means you've overstepped -- rewrite it as a suggestion for the Planner to consider.
 
-允许做小规模验证：比如用 files/terminal 工具读取 C:\\pics 下某个数据集里的少量
-样本图片，跑一小段代码验证某个阈值、某个启发式指标或某个模型调用是否真的可行，
-用来支撑你的判断 —— 但不要尝试处理整个数据集或跑完整 pipeline。
+Small-scale verification is allowed: for example, using the files/terminal tools to read a small number of sample
+images from a dataset under C:\\pics and run a short piece of code to verify whether some threshold, heuristic
+metric, or model call is actually feasible, to support your judgment -- but do not attempt to process an entire
+dataset or run the full pipeline.
 
-=== 会议硬约束：Stage 1 先验的使用边界 ===
-下面的 Stage 1 探索结果只允许用于：
-* 估算规模、成本、运行时间、候选池大小和 QA 抽样量。
-* 识别需要重点复核的风险区域。
-* 选择可配置的初始阈值或 dry-run 校准点。
-* 设计输出统计、日志和人工复核包。
+=== Meeting hard constraint: boundaries on using Stage 1 priors ===
+The Stage 1 exploration results below may only be used for:
+* Estimating scale, cost, runtime, candidate-pool size, and QA sampling volume.
+* Identifying risk areas that need focused review.
+* Choosing configurable initial thresholds or dry-run calibration points.
+* Designing output statistics, logs, and a manual-review package.
 
-下面的 Stage 1 探索结果不允许用于：
-* 直接判断某张图、某个数据集或某类文件是否适合 gallery。
-* 写死 dataset name 特例，例如"某数据集跳过模型/必然全是真实照片"。
-* 使用文件名、路径、目录名、来源描述、时间、EXIF 或 content_note 作为视觉适配性依据。
-* 把少量样本观察升级成通用硬规则。
+The Stage 1 exploration results below may NOT be used for:
+* Directly judging whether a specific image, dataset, or file type is suitable for the gallery.
+* Hardcoding dataset-name special cases, e.g. "skip the model for this dataset / it must all be real photos."
+* Using filenames, paths, directory names, source descriptions, timestamps, EXIF, or content_note as evidence of
+  visual suitability.
+* Upgrading a small-sample observation into a general hard rule.
 
-如果你提出任何基于当前数据分布的策略，必须标注为"可配置默认值/风险提示/成本规划"，
-不能写成不可违反的 suitability 规则。
+If you propose any strategy based on the current data distribution, it must be labeled as a "configurable
+default/risk note/cost estimate," and must not be written as an inviolable suitability rule.
 
-边界示例（用于判断某个 Stage 1 发现"能不能直接用"，而不是靠感觉判断）：
-* 可以直接用：某张图片的原生尺寸/朝向/宽高比，在给定目标展示高度下是否需要放大、
-  放大倍数是多少——这是对该图片自身几何事实的测量，可以直接作为它是否适合当前
-  展示形态的判断依据（"这张图放大 8.57x，不适合"是合法结论）。
-* 不能直接用：因为某个数据集里放大问题比例较高，就得出"这个数据集整体不适合
-  gallery"或"这个数据集应该跳过展示适配性检查"——这是把数据集层面的统计，
-  升级成了对数据集本身的判断，仍然是硬约束禁止的"写死 dataset 特例"。
-* 可以直接用：Stage 1 census/exhaustive pass 给出的具体重复文件路径列表（例如某几张
-  图片的 SHA 完全一致）——这是可复核的确定性事实，可以直接用来去重。
-* 不能直接用：仅凭 Stage 1 报告一句"这个数据集整体偏工程/资料类"，就跳过对其中
-  单张图片的实景可信度或展示适配性判断——分类描述不能替代逐图判断。
+Boundary examples (for judging whether a Stage 1 finding "can be used directly," rather than going by feel):
+* Can be used directly: a specific image's native size/orientation/aspect ratio, and whether it needs to be enlarged
+  at the given target display height and by how much -- this is a measurement of the image's own geometric facts,
+  and can be used directly as evidence for whether it suits the current display format ("this image needs an 8.57x
+  enlargement, unsuitable" is a valid conclusion).
+* Cannot be used directly: because a dataset has a higher proportion of enlargement issues, concluding that "this
+  whole dataset is unsuitable for the gallery" or "this dataset should skip the display-fit check" -- this upgrades a
+  dataset-level statistic into a judgment about the dataset itself, which is still the hard-constraint-forbidden
+  "hardcoded dataset special case."
+* Can be used directly: a list of specific duplicate file paths from a Stage 1 census/exhaustive pass (e.g. several
+  images with identical SHA) -- this is a reviewable deterministic fact and can be used directly for deduplication.
+* Cannot be used directly: skipping the real-world-credibility or display-fit judgment for individual images in a
+  dataset merely because a Stage 1 report says "this dataset overall skews engineering/reference material" -- a
+  categorical description cannot replace a per-image judgment.
 
-以下每一条"引用 Stage 1 证据"的要求，适用于本次会议的每一轮（不只是第 1 轮）：
-每轮只要你的发言涉及基于数据分布的实质判断，都要能说出具体文件路径和证据类型，
-而不能在后续轮次里退化成"凭上一轮印象"发言。
+Every requirement below about "citing Stage 1 evidence" applies to every round of this meeting (not just round 1):
+whenever your statement in any round involves a substantive judgment based on the data distribution, you must be
+able to cite a specific file path and evidence type -- it must not degrade in later rounds into speaking "from the
+impression of the previous round."
 
-=== 第 1 轮强制任务：环境能力探针 ===
-在提出任何架构建议之前，第 1 轮里每个人都必须先用 terminal 工具实际探测一遍你
-这个角色会用到的候选库/模型在本机是否真的可用（不是查文档猜测，是实际 import/
-调用一次），并把结果写进 shared/ 目录下的一个共享文件（如
-shared/env_capability_probe.md），供其他人直接读取、不用重复探测：
-* 具体加载/调用是否成功（不是"应该支持"），报错就把完整报错信息贴出来。
-* 明显不可用的方案直接标记为"已排除"，不要在后续轮次反复重新提出同一个已经
-  实测失败的方案。
-* 如果别人已经在 shared/env_capability_probe.md 里探测过你要用的同一个库/模型，
-  直接引用其结果，不要重复探测。
-这一步是为了避免把"这个模型到底能不能在这台机器上跑起来"这种一次性事实，
-拖到第 5-7 轮才通过试错逐个暴露——那样会浪费掉好几轮本可以用来讨论架构分歧
-的时间。
+=== Round 1 mandatory task: environment capability probe ===
+Before proposing any architecture, in round 1 everyone must first use the terminal tool to actually probe whether the
+candidate libraries/models your role will use are really available on this machine (not guessing from documentation,
+but actually importing/calling them once), and write the result into a shared file under the shared/ directory (e.g.
+shared/env_capability_probe.md) so others can read it directly without re-probing:
+* Whether loading/calling actually succeeds (not "should be supported") -- if it errors, paste the full error
+  message.
+* Clearly unavailable options should be marked "excluded" immediately -- do not repeatedly re-propose the same
+  already-tested-and-failed option in later rounds.
+* If someone else has already probed the same library/model you need in shared/env_capability_probe.md, cite their
+  result directly rather than re-probing.
+This step exists to avoid a one-time fact like "can this model actually run on this machine" being dragged out and
+exposed piecemeal by trial and error through rounds 5-7 -- that would waste several rounds that could otherwise be
+spent discussing architectural disagreements.
 
-=== 任务原始要求 ===
+=== Original task requirements ===
 {task_spec}
 
-=== Stage 1 探索先验（已完成的数据集扫描结果，不需要重新探索） ===
+=== Stage 1 exploration priors (completed dataset scan results, no need to re-explore) ===
 {probing}
 """
 

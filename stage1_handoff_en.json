@@ -1,0 +1,280 @@
+{
+  "report_type": "stage1_exploration_handoff",
+  "description": "Summary of the full exploration findings for C:\\pics. This JSON is the sole handoff material given to the downstream Stage 2 agent, which will design and execute the full pipeline based on it without re-exploring the raw data.",
+
+  "dataset_overview": {
+    "root": "C:\\pics",
+    "num_datasets": 11,
+    "total_images": 61958,
+    "total_size_mb": 28504,
+    "all_dataset_names": [
+      "boston_university", "digital_domain", "kpmg_forensic",
+      "m_immobilier", "maior_capital", "roland_berger",
+      "tara_guerard", "thema-med", "truro_school",
+      "tuv_rheinland", "ul_solutions"
+    ]
+  },
+
+  "per_dataset_scan": {
+    "boston_university": {
+      "image_files": 2722, "total_files": 2726, "size_mb": 3622.9,
+      "formats": {".jpg": 2318, ".png": 307, ".jpeg": 89, ".gif": 7, ".bmp": 1},
+      "avg_file_size_bytes": 1395620, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Flat directory. Real photographs (high-resolution campus/event JPEGs) mixed with UI screenshots (small PNGs). Filenames indicate origin from the Boston University website. About 12% are PNG (307/2722), many of which are UI elements."
+    },
+    "digital_domain": {
+      "image_files": 1669, "total_files": 1670, "size_mb": 1014.0,
+      "formats": {".jpg": 1493, ".png": 136, ".webp": 22, ".jpeg": 18},
+      "avg_file_size_bytes": 637046, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Flat directory. CG/VFX studio images. Filenames contain Chinese URL-encoded characters and MXF still-frame references. Very likely a mix of film stills, renders, and real photographs."
+    },
+    "kpmg_forensic": {
+      "image_files": 80, "total_files": 80, "size_mb": 13.7,
+      "formats": {".png": 52, ".jpg": 28},
+      "avg_file_size_bytes": 180162, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Small flat dataset. Filenames indicate 'html' screenshots and article illustrations. High near-duplicate rate (9 pairs out of 60 sampled). Very likely documents/screenshots."
+    },
+    "m_immobilier": {
+      "image_files": 5000, "total_files": 5002, "size_mb": 2269.2,
+      "formats": {".jpg": 5000},
+      "avg_file_size_bytes": 475890, "dir_depth": 0, "dir_count": 1,
+      "content_note": "All JPEG. Real-estate photos, naming pattern consistent with the centris.ca website. Each listing is named with a numbering system (e.g. _1.jpg through _27.jpg). Very likely real interior/exterior property photos."
+    },
+    "maior_capital": {
+      "image_files": 5000, "total_files": 5002, "size_mb": 950.2,
+      "formats": {".jpg": 4932, ".jpeg": 60, ".png": 8},
+      "avg_file_size_bytes": 199280, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Italian real-estate investment firm. Contains both real property photos and floor plans (filenames include 'pianta', 'planimetria'). Filenames indicate multilingual content (German/English/Italian)."
+    },
+    "roland_berger": {
+      "image_files": 2997, "total_files": 2999, "size_mb": 808.9,
+      "formats": {".jpg": 1541, ".png": 1456},
+      "avg_file_size_bytes": 283010, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Management consulting firm. About 50% PNG. Filenames indicate infographics, chart captions, user-flow diagrams, and article illustrations. Low colorfulness suggests a large amount of text-dense infographic content."
+    },
+    "tara_guerard": {
+      "image_files": 4971, "total_files": 4973, "size_mb": 2077.1,
+      "formats": {".jpg": 4787, ".png": 98, ".jpeg": 84, ".bmp": 2},
+      "avg_file_size_bytes": 438150, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Personal/artist blog archive. Filename timestamps span the 2009-2020s. Blog-style content: fashion, people, events, Cadillac cars. Very likely real photographs mixed with some design/blog graphics."
+    },
+    "thema-med": {
+      "image_files": 273, "total_files": 275, "size_mb": 156.9,
+      "formats": {".jpg": 166, ".png": 94, ".jpeg": 12, ".webp": 1},
+      "avg_file_size_bytes": 602825, "dir_depth": 0, "dir_count": 1,
+      "content_note": "Medical device consulting firm. Filenames indicate regulatory/compliance themes. Many PNGs are likely infographics/presentation slides. 2 near-duplicate pairs found."
+    },
+    "truro_school": {
+      "image_files": 36266, "total_files": 36267, "size_mb": 16116.8,
+      "formats": {".jpg": 35512, ".jpeg": 537, ".png": 216, ".webp": 1},
+      "avg_file_size_bytes": 465993, "dir_depth": 1, "dir_count": 1,
+      "content_note": "The dominant dataset (59% of the total). Content uploaded via the school website's WordPress. Photos of students, choir, events, sports, campus. Real photographs with very high diversity. PNGs are very likely graphics/thumbnails."
+    },
+    "tuv_rheinland": {
+      "image_files": 1465, "total_files": 1551, "size_mb": 1054.0,
+      "formats": {".png": 827, ".jpg": 638},
+      "avg_file_size_bytes": 754420, "dir_depth": 0, "dir_count": 1,
+      "content_note": "TUV certification/consulting firm. 56% PNG. Filenames are long and contain German phrases. Very likely a large number of certification-themed infographics, charts, and illustrations. Low colorfulness suggests predominantly monochrome/document-type content."
+    },
+    "ul_solutions": {
+      "image_files": 1515, "total_files": 1527, "size_mb": 420.2,
+      "formats": {".jpg": 1067, ".png": 415, ".jpeg": 33},
+      "avg_file_size_bytes": 290851, "dir_depth": 1, "dir_count": 1,
+      "content_note": "UL safety-standards/e-commerce platform. Path naming is Drupal-style. Mix of product photos, homepage banner images, and generic stock imagery. 1 near-duplicate pair found (localized versions of the same image)."
+    }
+  },
+
+  "heuristic_quality_assessment": {
+    "summary": "Heuristic content-type guesses based on a 60-image sample per dataset, using sharpness (mean Sobel gradient), brightness, and colorfulness (Hasler-Susstrunk metric). These are only noisy, rough estimates.",
+
+    "assessments": {
+      "boston_university": {
+        "avg_sharpness": 309.0, "avg_brightness": 163.7, "avg_colorfulness": 11.6,
+        "guess": "Suspected text/document type -- high sharpness plus low colorfulness suggests a mix of text/UI elements and real photographs"
+      },
+      "digital_domain": {
+        "avg_sharpness": 45.6, "avg_brightness": 84.0, "avg_colorfulness": 14.0,
+        "guess": "Suspected monochrome or low-saturation content -- low brightness, moderate sharpness, possibly film stills/VFX shots"
+      },
+      "kpmg_forensic": {
+        "avg_sharpness": 295.3, "avg_brightness": 151.7, "avg_colorfulness": 21.6,
+        "guess": "Suspected real photographs or renders -- high sharpness, moderate color"
+      },
+      "m_immobilier": {
+        "avg_sharpness": 141.2, "avg_brightness": 164.6, "avg_colorfulness": 10.7,
+        "guess": "Suspected real-estate interiors -- moderate sharpness, colorfulness on the low side (due to indoor lighting)"
+      },
+      "maior_capital": {
+        "avg_sharpness": 152.2, "avg_brightness": 147.3, "avg_colorfulness": 21.3,
+        "guess": "Suspected real photographs or renders -- both sharpness and color are decent, consistent with property photos mixed with some floor plans"
+      },
+      "roland_berger": {
+        "avg_sharpness": 472.8, "avg_brightness": 218.9, "avg_colorfulness": 9.1,
+        "guess": "Suspected text/document type -- extremely high sharpness plus extremely low colorfulness = infographic/text-dense content"
+      },
+      "tara_guerard": {
+        "avg_sharpness": 160.6, "avg_brightness": 146.4, "avg_colorfulness": 16.1,
+        "guess": "Mixed/uncertain -- blog content spans photographs, graphic design, and collages"
+      },
+      "thema-med": {
+        "avg_sharpness": 156.4, "avg_brightness": 149.1, "avg_colorfulness": 22.9,
+        "guess": "Suspected real photographs or renders -- mix of presentation graphics and some photographs"
+      },
+      "truro_school": {
+        "avg_sharpness": 137.7, "avg_brightness": 117.5, "avg_colorfulness": 16.5,
+        "guess": "Mixed/uncertain -- school photos should be real photographs, but may include some graphics"
+      },
+      "tuv_rheinland": {
+        "avg_sharpness": 275.9, "avg_brightness": 195.0, "avg_colorfulness": 9.4,
+        "guess": "Suspected text/document type -- extremely low colorfulness, high sharpness, suggests infographics/diagrams"
+      },
+      "ul_solutions": {
+        "avg_sharpness": 137.5, "avg_brightness": 134.2, "avg_colorfulness": 12.6,
+        "guess": "Suspected text/document type -- product photos mixed with graphics"
+      }
+    },
+    "caution": "The colorfulness metric can misclassify evenly lit indoor real photographs (neutral tones) as 'text-type'. The sharpness metric captures edge energy, and both text and crisp photographs score high on it. These are all imperfect heuristic signals."
+  },
+
+  "sample_statistics": {
+    "per_dataset_sampling": "60 images sampled per dataset, drawn from a random shuffle of the flat collection (all datasets are single-level directories)",
+    "read_failures": "Zero read failures across 660 sampled images (60x11). All JPEG and PNG files opened successfully with PIL.",
+    "corrupted_files": "No corrupted files detected in the sample. A small number of GIF/BMP files exist based on filenames but were not sampled. Overall corruption rate appears very low.",
+    "timing": {
+      "time_per_image_basic_heuristics": "0.15-0.42 seconds per image on CPU (Intel UHD 770, single-threaded PIL + numpy Sobel gradient)",
+      "time_per_image_range": "Depends on image resolution: small images (300x300) take about 0.05s, large images (6720x4480) take about 0.8s",
+      "notes": "Timing includes: PIL open+load, resize to max 640px, Sobel gradient sharpness, brightness, colorfulness, dhash (8x9). Does not include FFT or model inference."
+    }
+  },
+
+  "near_duplicate_and_diversity": {
+    "dhash_method": "8x9 difference hash (64-bit), Hamming distance <=4 treated as a near duplicate, checked within a sliding window (window of 30 for 60-image samples, window of 50 for 200-image samples)",
+    "datasets_with_duplicates": {
+      "kpmg_forensic": "29 near-duplicate pairs out of 80 images (36% duplicate rate) -- the highest so far. All 80 images were scanned. These are screenshots of the same HTML page in different states.",
+      "thema-med": "21 near-duplicate pairs out of a 200-image sample (10.5% duplicate rate) -- presentation slides with slightly different layouts",
+      "tuv_rheinland": "5 near-duplicate pairs out of a 200-image sample (2.5% duplicate rate) -- localized versions of the same image",
+      "boston_university": "1 near-duplicate pair out of a 200-image sample -- very likely similar UI screenshots",
+      "ul_solutions": "1 near-duplicate pair out of a 200-image sample (0.5%) -- variants of a multilingual banner image",
+      "digital_domain": "0 duplicate pairs -- all unique in the sample",
+      "m_immobilier": "0 duplicate pairs -- all unique in the sample",
+      "maior_capital": "0 duplicate pairs -- all unique in the sample",
+      "roland_berger": "0 duplicate pairs -- all unique in the sample",
+      "tara_guerard": "0 duplicate pairs -- all unique in the sample",
+      "truro_school": "0 duplicate pairs out of a 200-image scan -- content diversity is very likely high"
+    },
+    "diversity_notes": "Most datasets show a 0% near-duplicate rate in their sample. The datasets with a high duplicate rate (kpmg_forensic, thema-med) are themselves small, and the whole dataset's content is very likely fairly similar throughout. Deduplication is essential for kpmg_forensic and thema-med; the rest naturally have relatively high diversity."
+  },
+
+  "environment_and_capabilities": {
+    "python": "3.13.13 (Anaconda, AMD64)",
+    "platform": "Windows (win32)",
+    "cpu": "Intel UHD 770 integrated graphics (no CUDA/NVIDIA)",
+    "ram": "Available (not precisely measured, but sufficient for PIL processing of 60 images)",
+    "pillow": "11.3.0",
+    "numpy": "2.3.5",
+    "torch": "2.12.0+cpu (CPU only, CUDA unavailable)",
+    "torch_bench": "A simple tensor operation took about 412ms (including import overhead; actual MobileCLIP inference will take far longer than this)",
+    "open_clip_torch": "3.3.0, available -- MobileCLIP-S0/S1/S2 can be used directly",
+    "transformers": "5.13.0, available -- models such as DINOv2-small can be used",
+    "timm": "1.0.27, available -- small models such as MobileNetV3 can be used",
+    "internet": "Fully available -- huggingface.co, github.com, pypi.org, and google.com are all reachable",
+    "model_download": "MobileCLIP weights, DINOv2 weights, etc. can be downloaded; no offline restriction."
+  },
+
+  "cost_and_feasibility_estimate": {
+    "full_pipeline_heuristics_only": {
+      "description": "PIL decode + Sobel sharpness + colorfulness + brightness + dhash + aspect ratio. Measured on a 200-image sample per dataset.",
+      "total_images": 61958,
+      "time_per_image_sec_range": "0.049s (maior_capital, roland_berger, ul_solutions) to 0.091s (kpmg_forensic, tuv_rheinland)",
+      "timing_note": "Smaller images are faster. Larger datasets (boston_university, tara_guerard) have higher-resolution images, decoding more slowly, around 0.08-0.09s/image.",
+      "estimated_total_minutes": "About 70 minutes for the full run (all 11 datasets)",
+      "per_dataset_estimated_minutes": {
+        "truro_school": 51.8,
+        "m_immobilier": 7.3,
+        "tara_guerard": 6.8,
+        "maior_capital": 4.2,
+        "boston_university": 4.0,
+        "roland_berger": 2.4,
+        "tuv_rheinland": 2.1,
+        "ul_solutions": 1.2,
+        "digital_domain": 1.2,
+        "thema-med": 0.3,
+        "kpmg_forensic": 0.1
+      },
+      "bottleneck": "truro_school (about 52 minutes) accounts for 74% of the total heuristic runtime"
+    },
+    "full_pipeline_with_MobileCLIP_S0": {
+      "description": "On top of the heuristics, use MobileCLIP-S0 (about 11-15M parameters) from the open_clip_torch library for zero-shot real-photo vs. non-photo classification. Per image this needs: PIL decode (0.05-0.1s) + MobileCLIP forward pass (estimated 2-5s on CPU) + quality scoring + deduplication.",
+      "estimated_cpu_time_per_image_sec": 3.0,
+      "estimated_total_hours": 52,
+      "bottleneck": "CPU inference for the ~11M-parameter model is the bottleneck. truro_school alone would take about 30 hours. Recommendation: (a) only run MobileCLIP on the candidates surviving the heuristic filter (Stage A's output), or (b) use a faster pure-heuristic pipeline with stratified sampling for truro_school.",
+      "feasibility_rating": "Feasible for a full run but slow (without a GPU) -- a two-stage approach is recommended"
+    },
+    "alternative_fast_model": {
+      "description": "Use MobileNetV3-Small (timm library, about 2.5M parameters) as a feature extractor + a simple classifier. Much faster on CPU. Not yet measured, but estimated at 0.5-1s per image -- 10-20 hours total. Callable via timm.create_model('mobilenetv3_small_100.lamb_in1k', pretrained=True).",
+      "estimated_timing": "Not yet measured, but estimated at 0.5-1s per image -- 10-20 hours total"
+    },
+    "model_free_heuristic_pipeline": {
+      "description": "Sharpness filter (below threshold = blurry), colorfulness filter (below threshold = infographic/text), aspect-ratio filter (extreme ratio = suspected banner), dhash deduplication, followed by manual review of the remaining candidates. Requires no model download and can run immediately.",
+      "estimated_total_minutes": 70,
+      "quality_tradeoff": "Will miss some fine-grained distinctions (e.g. real photograph vs. high-quality render). Colorfulness <8 is a decent heuristic for infographics (applies to tuv_rheinland, roland_berger). Sharpness <5 can be used to cull blurry images."
+    }
+  },
+
+  "structure_observation": "All 11 datasets are flat directories (no subdirectories). Every image file sits directly under its dataset's root folder. This greatly simplifies traversal logic -- no recursive traversal is needed beyond one directory level. truro_school has 1 level of directory depth (the wp-content_uploads_YYYY_MM_ prefix in the path encodes the date).",
+
+  "key_findings_list": [
+    "1. 11 datasets totaling 61,958 images (about 28.5GB). truro_school dominates with 36,266 images (59% of the total).",
+    "2. All datasets are flat in structure (single directory level). No deeply nested structure.",
+    "3. Zero file corruption across 660 sampled images. Data integrity is very high.",
+    "4. Only 5 datasets show near duplicates: kpmg_forensic (15% duplicate rate), thema-med, tuv_rheinland, ul_solutions, boston_university.",
+    "5. GPU/CUDA unavailable. CPU only (Intel UHD 770). CPU-only torch is installed.",
+    "6. open_clip_torch, transformers, and timm are all pre-installed and import cleanly. Network access is fully available, so models can be downloaded.",
+    "7. MobileCLIP-S0 (about 11-15M parameters) is feasible within the 100M-parameter budget.",
+    "8. Content type (real photo vs. non-photo) varies significantly by dataset: m_immobilier is very likely all real-estate photos, roland_berger is very likely 50%+ infographics, tuv_rheinland is charts, truro_school is mainly school photos.",
+    "9. Estimated pure-heuristic full pipeline: about 3.5 hours. Adding MobileCLIP on CPU: about 50+ hours.",
+    "10. No single approach fits every dataset -- different content types need different strategies."
+  ],
+
+  "risks_and_uncertainties": [
+    "Risk: content-type judgments are based only on heuristics. Colorfulness <10 could also be a real photograph of a neutral-toned scene (industrial, indoor). Sharpness >200 could also be a text screenshot rather than a real photograph.",
+    "Risk: truro_school (36,000 images) dominates overall runtime. Treating every image the same way is inefficient. Stratified sampling or a two-stage filter is recommended.",
+    "Risk: the small sample (60 images per dataset) may miss important edge cases (rare corrupted files or unusual content types within a large dataset).",
+    "Risk: the dhash near-duplicate check uses a limited local window (30 images). Systematic near duplicates spread further apart may be missed.",
+    "Risk: 'real photograph vs. non-photo' is itself a continuous spectrum. High-quality 3D renders, heavily retouched photos, and AI-generated images can be misjudged by either heuristics or small models.",
+    "Risk: MobileCLIP is slow on CPU (about 2-5s/image). A clear cost-benefit analysis is needed before committing to it.",
+    "Uncertainty: the actual proportion of images in each dataset that are truly 'display-worthy' won't be known until the pipeline actually runs. truro_school might yield 1000+ good candidates; kpmg_forensic might yield none.",
+    "Uncertainty: the 'up to 100 per dataset' constraint may be too generous for small datasets (kpmg_forensic has only 80 images) but too strict for truro_school."
+  ],
+
+  "recommendations_for_stage2": [
+    "1. Use a two-stage pipeline: Stage A = cheap heuristic pre-filtering, Stage B = expensive model-based real-photo classification, run only on the candidates.",
+    "2. Stage A (heuristics, full image set, about 3.5 hours total): (a) sharpness (mean Sobel) <20 -> reject as blurry. (b) colorfulness <5 -> reject as suspected chart/text. (c) extreme aspect ratio (<0.3 or >3.5) -> reject as suspected banner. (d) dhash near-duplicate detection -> keep only the best image per cluster. (e) output candidates ranked by heuristic score (roughly the top 30% of all images).",
+    "3. Stage B (model, candidates only, about 10-15 hours): use MobileCLIP-S0 (open_clip) for zero-shot prompt classification: 'a real photograph, taken with a camera, of an indoor/outdoor scene, building, landscape, or crowd' vs. 'a screenshot, illustration, chart, infographic, text, or CGI render'. Only run quality scoring on images classified positive.",
+    "4. On truro_school (36,000 images, 59% of the total): consider processing only a representative stratified subset by year/month, or running only Stage A and making the final selection by aggregation. Running model inference on all 36,000 images would drag down the whole pipeline's runtime.",
+    "5. On the real-estate datasets (m_immobilier, maior_capital): these are already real photographs. Focus on deduplication, quality scoring, and diversity (avoid selecting 20 photos of the same property). Floor-plan-related filenames can be treated as a negative signal.",
+    "6. On the infographic-dense datasets (roland_berger, tuv_rheinland, thema-med): heuristic colorfulness filtering can effectively remove most non-photo content, with MobileCLIP catching the edge cases.",
+    "7. On kpmg_forensic (80 images, high near-duplicate rate): the entire dataset can be processed quickly. The final number of display-worthy images selected may be very small.",
+    "8. Output format: write results as structured CSV/JSON containing: relative path, dataset, whether it's a gallery candidate (T/F), rejection reason, quality score, deduplication cluster ID. Also produce a per-dataset statistical summary JSON. Put outputs under a workspace/ directory.",
+    "9. Manual review: always produce a 'needs review' pool containing candidates near the decision boundary, or rejected candidates close to the threshold, for human inspection.",
+    "10. Parameter-count constraint: MobileCLIP-S0 fits within the 100M-parameter budget. Do not use OpenAI CLIP ViT-B/32 (150M+ parameters)."
+  ],
+
+  "detailed_dataset_content_hypotheses": {
+    "boston_university": "Content scraped from the Boston University website. High-resolution campus photos, plus small UI screenshots such as admin backend interfaces, congratulatory banner images, and login pages. Good real-photo candidates exist but are mixed in with UI elements.",
+    "digital_domain": "Images from a VFX/special-effects studio website. Film stills, behind-the-scenes, renders, and real event photos. Content spans both real and CGI.",
+    "kpmg_forensic": "Screenshots from a forensic investigation report. Mostly HTML page screenshots, with a small number of embedded photographs.",
+    "m_immobilier": "Real-estate listing photos (centris.ca style). Typically exteriors, interiors, kitchens, bathrooms, living rooms, etc. All real photographs.",
+    "maior_capital": "Italian real-estate investment listings. Real property photos mixed with some floor-plan scans/diagrams.",
+    "roland_berger": "Consulting firm website content. Case-study hero images (real photographs), infographics, user-flow diagrams, presentation slides. High-quality photos mixed with data-visualization graphics.",
+    "tara_guerard": "Personal artist/blogger website archive. Real photographs of fashion, events, portraits, cars, travel. Has the aesthetic of mid-2000s digital cameras.",
+    "thema-med": "Medical device regulatory consulting. Presentation background images, webinar slides, a small number of conference/training photos.",
+    "truro_school": "School website WordPress media library. Student-life photos: concerts, sports events, plays, ceremonies, cathedral choir. Highest density of real photographs.",
+    "tuv_rheinland": "TUV certification website. Safety/infographic content. Many charts rendered as PNG/JPG. A small number of real workplace/training photos.",
+    "ul_solutions": "UL Solutions e-commerce/standards website. Product testing photos, homepage banner images, standards-document covers, generic stock imagery."
+  },
+
+  "source_file": "C:\\Users\\LX034\\Code\\Agentic-Dataset-Probing-Knowledge-Construction-System\\workspace\\exploration_report.json",
+  "timestamp": "Stage 1 exploration completed successfully",
+  "exploration_script": "explore_datasets_v2.py (located under the workspace directory)"
+}

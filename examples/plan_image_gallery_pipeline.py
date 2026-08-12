@@ -26,41 +26,43 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from agent_meeting import MeetingConfig, ParticipantConfig, run_meeting
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_cn.txt"
-PROBING_PATH = REPO_ROOT / "stage1_handoff_zh.json"
+TASK_SPEC_PATH = REPO_ROOT / "prompt_complex_v1_en.txt"
+PROBING_PATH = REPO_ROOT / "stage1_handoff_en.json"
 
 MEETING_INSTRUCTIONS = """\
-=== 会议目标 ===
-这是一次规划（planning）会议，不是执行会议。目标是产出一份具体、可直接交给后续
-Executor 执行的方案。你不需要（也不应该）跑完整的 61958 张图片的全量 pipeline。
+=== Meeting goal ===
+This is a planning meeting, not an execution meeting. The goal is to produce a concrete plan that can be handed
+directly to a later Executor. You do not need to (and should not) run the full pipeline over all 61,958 images.
 
-允许做小规模验证：比如用 files/terminal 工具读取 C:\\pics 下某个数据集里的少量
-样本图片，跑一小段代码验证某个阈值、某个启发式指标或某个模型调用是否真的可行，
-用来支撑你的方案判断 —— 但不要尝试处理整个数据集或跑完整 pipeline。
+Small-scale verification is allowed: for example, using the files/terminal tools to read a small number of sample
+images from a dataset under C:\\pics and run a short piece of code to verify whether some threshold, heuristic
+metric, or model call is actually feasible, to support your judgment -- but do not attempt to process an entire
+dataset or run the full pipeline.
 
-请在你的专长范围内给出具体、可论证的设计（不是泛泛而谈），并在最后给出一个可以
-写进最终方案里的结论段落。
+Give a concrete, well-argued design within your area of expertise (not generalities), and end with a conclusion
+paragraph that could be written directly into the final plan.
 
-=== 会议硬约束：Stage 1 先验的使用边界 ===
-下面的 Stage 1 探索结果只允许用于：
-* 估算规模、成本、运行时间、候选池大小和 QA 抽样量。
-* 识别需要重点复核的风险区域。
-* 选择可配置的初始阈值或 dry-run 校准点。
-* 设计输出统计、日志和人工复核包。
+=== Meeting hard constraint: boundaries on using Stage 1 priors ===
+The Stage 1 exploration results below may only be used for:
+* Estimating scale, cost, runtime, candidate-pool size, and QA sampling volume.
+* Identifying risk areas that need focused review.
+* Choosing configurable initial thresholds or dry-run calibration points.
+* Designing output statistics, logs, and a manual-review package.
 
-下面的 Stage 1 探索结果不允许用于：
-* 直接判断某张图、某个数据集或某类文件是否适合 gallery。
-* 写死 dataset name 特例，例如“某数据集跳过模型/必然全是真实照片”。
-* 使用文件名、路径、目录名、来源描述、时间、EXIF 或 content_note 作为视觉适配性依据。
-* 把少量样本观察升级成通用硬规则。
+The Stage 1 exploration results below may NOT be used for:
+* Directly judging whether a specific image, dataset, or file type is suitable for the gallery.
+* Hardcoding dataset-name special cases, e.g. "skip the model for this dataset / it must all be real photos."
+* Using filenames, paths, directory names, source descriptions, timestamps, EXIF, or content_note as evidence of
+  visual suitability.
+* Upgrading a small-sample observation into a general hard rule.
 
-如果你提出任何基于当前数据分布的策略，必须标注为“可配置默认值/风险提示/成本规划”，
-不能写成不可违反的 suitability 规则。
+If you propose any strategy based on the current data distribution, it must be labeled as a "configurable
+default/risk note/cost estimate," and must not be written as an inviolable suitability rule.
 
-=== 任务原始要求 ===
+=== Original task requirements ===
 {task_spec}
 
-=== Stage 1 探索先验（已完成的数据集扫描结果，不需要重新探索） ===
+=== Stage 1 exploration priors (completed dataset scan results, no need to re-explore) ===
 {probing}
 """
 

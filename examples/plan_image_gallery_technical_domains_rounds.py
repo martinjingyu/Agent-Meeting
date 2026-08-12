@@ -60,99 +60,104 @@ RECON_REPORT_FILES = ["report_1.md", "report_2.md", "report_3.md"]
 
 
 PARTICIPANT_TASK_SPEC = """\
-输入与目标：
+Input and objective:
 
-- 输入根目录为 `C:\\pics`。
-- 根目录下每个一级子目录代表一个独立图片数据集；内部结构、格式、数量和
-  命名方式均不可预设。
-- 目标是从每个数据集中自动选出最多 100 张适合固定高度横向 carousel 的
-  真实实景图片。
-- 如果真正合格的图片不足 100 张，应输出实际数量，不得用低质、非实景、
-  有害、重复或展示不适配的图片补足。
+- Input root directory is `C:\\pics`.
+- Each first-level subdirectory under the root represents an independent image dataset; internal structure, format,
+  count, and naming conventions cannot be assumed.
+- The goal is to automatically select up to 100 real-world photographic images per dataset that are suitable for a
+  fixed-height horizontal carousel.
+- If fewer than 100 images genuinely qualify, output the actual count; do not pad the result with low-quality,
+  non-real, harmful, duplicate, or display-unsuitable images.
 
-最终结果应综合考虑：
+The final result should jointly consider:
 
-- 真实世界拍摄场景的可信度；
-- 图片技术质量、主体清晰度、构图和公开展示价值；
-- 固定高度 carousel 下的放大倍率、渲染宽度、视口占比和比例适配；
-- 场景、主体、视角、色彩和构图的多样性；
-- exact duplicate、near duplicate、同场景和高度相似内容；
-- 避免单人近景或同一人物/场景过度占据最终结果；
-- 明显网页、幻灯片、logo、UI、海报、图表、CG、AI 风格图和其他非实景内容；
-- 适合自动识别的有害或敏感视觉内容。
+- Credibility as a real-world captured scene;
+- Technical image quality, subject clarity, composition, and public display value;
+- Magnification ratio, rendered width, viewport share, and aspect fit under the fixed-height carousel;
+- Diversity of scene, subject, viewpoint, color, and composition;
+- Exact duplicates, near duplicates, same-scene and highly similar content;
+- Avoiding single-person close-ups or any one person/scene dominating the final result;
+- Obvious webpages, slides, logos, UI, posters, charts, CG, AI-style images, and other non-real-world content;
+- Harmful or sensitive visual content suitable for automated detection.
 
-信息使用边界：
+Boundaries on information use:
 
-- 判断真实性、质量、展示价值和内容安全时，只能使用图像像素、解码结果和
-  单图几何事实。
-- 文件名、路径、数据集名称、时间和非方向性 EXIF 不得作为视觉 suitability
-  或语义类别的判断依据。
-- 上述非视觉信息可以用于追溯、稳定排序、缓存、错误记录和纯工程管理。
-- 如果文件名只用于提出待验证的 duplicate/family pair，最终关系仍必须由
-  视觉内容确认，且不得影响真实性或质量判断。
+- Judgments of authenticity, quality, display value, and content safety may only use image pixels, decoded results,
+  and single-image geometric facts.
+- Filenames, paths, dataset names, timestamps, and non-orientation EXIF must not be used as evidence for visual
+  suitability or semantic category.
+- The above non-visual information may be used for traceability, stable ordering, caching, error logging, and pure
+  engineering management.
+- If a filename is only used to propose a candidate duplicate/family pair to be verified, the final relationship must
+  still be confirmed by visual content, and must not influence authenticity or quality judgments.
 
-自动化与评估边界：
+Automation and evaluation boundaries:
 
-- 原始数据不含人工 ground truth，本任务不得要求新增人工标注、人工调参、
-  人工批准或人工复核作为生产结果生成的必要条件。
-- 生产运行必须全自动。可以输出非阻塞审计材料、风险标记和不确定性信息。
-- 技术验证可以使用确定性事实、已有机器可读记录、程序化/合成测试、
-  metamorphic tests、无监督稳定性、方法间分歧、公开元数据和集合级代理指标。
-- 没有可靠 ground truth 时，不得声称测得真实 precision、recall、审美准确率
-  或内容安全召回率。外部视觉 API 的输出是模型判断或 weak reference，不是
-  ground truth。
+- The raw data has no human ground truth; this task must not require new human annotation, manual tuning, manual
+  approval, or manual review as a precondition for producing production results.
+- Production runs must be fully automatic. Non-blocking audit material, risk flags, and uncertainty information may
+  be output.
+- Technical validation may use deterministic facts, existing machine-readable records, programmatic/synthetic tests,
+  metamorphic tests, unsupervised stability, cross-method disagreement, published metadata, and set-level proxy
+  metrics.
+- Without reliable ground truth, do not claim measured true precision, recall, aesthetic accuracy, or content-safety
+  recall. External vision API output is a model judgment or weak reference, not ground truth.
 
-计算与服务约束：
+Compute and service constraints:
 
-- 本地执行模型必须小于 100M 参数，并支持 Windows CPU-only；不得依赖 CUDA、
-  NVIDIA GPU 或 GPU-only 推理。
-- 允许讨论在本地候选压缩后使用外部视觉 API，作为最终语义评价、比较排序
-  或内容安全判断的一部分。
-- 外部 API 建议必须同时讨论最大候选量、调用成本、隐私、批次/顺序偏差、
-  可审计性、版本变化和纯本地 fallback。
+- The locally executed model must be under 100M parameters and support Windows CPU-only; it must not depend on CUDA,
+  NVIDIA GPUs, or GPU-only inference.
+- Discussion of using an external vision API after local candidate compression, as part of the final semantic
+  evaluation, comparative ranking, or content-safety judgment, is allowed.
+- Any external API proposal must also discuss maximum candidate volume, call cost, privacy, batch/order bias,
+  auditability, version drift, and a pure-local fallback.
 
-范围声明：
+Scope statement:
 
-- 本任务不声称自动完成版权、商标、品牌、肖像授权、隐私或法律审批。
-- 会议负责技术方案论证；最终 Planner 负责把讨论综合成可执行工程方案。
+- This task does not claim to automatically complete copyright, trademark, brand, portrait-rights, privacy, or legal
+  approval.
+- The meeting is responsible for the technical approach; the final Planner is responsible for synthesizing the
+  discussion into an executable engineering plan.
 """
 
 
 TECHNOLOGY_LANDSCAPE = """\
-下面是技术导航，不是完整清单、推荐顺序或最终架构。参与者可以补充、反驳、
-组合或放弃其中的方法。
+Below is a technology map, not a complete list, a recommended order, or a final architecture. Participants may
+supplement, challenge, combine, or abandon any of these methods.
 
-1. 传统图像处理与图像取证
-   - 颜色量化、局部熵、亮度/饱和度、动态范围、模糊、噪声、压缩；
-   - 大面积近似色连通区域、矩形块、规则网格、边缘方向和空间布局；
-   - OCR、文字区域、网页/幻灯片/logo/UI/海报的结构信号；
-   - 频域、梯度、局部纹理和无参考图像质量指标。
+1. Classical image processing and image forensics
+   - Color quantization, local entropy, brightness/saturation, dynamic range, blur, noise, compression;
+   - Large near-uniform-color connected regions, rectangular blocks, regular grids, edge orientation, and spatial
+     layout;
+   - OCR, text regions, structural signals for webpages/slides/logos/UI/posters;
+   - Frequency domain, gradients, local texture, and no-reference image quality metrics.
 
-2. 视觉表征与学习型模型
-   - CNN 中间特征、ImageNet 分类器、轻量场景/质量分类器；
-   - CLIP/MobileCLIP、自监督 embedding、视觉语义和 aesthetic 模型；
-   - 轻量分类器、特征融合、弱监督和无标签表示。
+2. Visual representations and learned models
+   - CNN intermediate features, ImageNet classifiers, lightweight scene/quality classifiers;
+   - CLIP/MobileCLIP, self-supervised embeddings, visual-semantic and aesthetic models;
+   - Lightweight classifiers, feature fusion, weak supervision, and label-free representations.
 
-3. 相似度、检索与聚类
-   - SHA、pHash/dHash/colorHash、SSIM 和 near-duplicate graph；
-   - k-NN、same-scene grouping、micro/macro clustering；
-   - hierarchical clustering、HDBSCAN、spherical k-means、k-medoids；
-   - outlier、medoid、cluster representative 和 cluster stability。
+3. Similarity, retrieval, and clustering
+   - SHA, pHash/dHash/colorHash, SSIM, and near-duplicate graphs;
+   - k-NN, same-scene grouping, micro/macro clustering;
+   - Hierarchical clustering, HDBSCAN, spherical k-means, k-medoids;
+   - Outliers, medoids, cluster representatives, and cluster stability.
 
-4. 多模态视觉 API 与内容安全
-   - 单图语义判断、成对比较、listwise reranking 和 contact-sheet judging；
-   - screenshot、slide、CG、AI 图、构图、主体、展示价值和场景标签；
-   - moderation、安全分类、调用成本、隐私、一致性和 fallback。
+4. Multimodal vision APIs and content safety
+   - Single-image semantic judgment, pairwise comparison, listwise reranking, and contact-sheet judging;
+   - Screenshot/slide/CG/AI-image detection, composition, subject, display value, and scene tagging;
+   - Moderation, safety classification, call cost, privacy, consistency, and fallback.
 
-5. 排名与集合选择
-   - MMR、DPP、facility location、submodular selection、配额和约束优化；
-   - cluster coverage、family cap、场景/人物/构图比例；
-   - quality floor、gallery cohesion、carousel 首屏和整体节奏。
+5. Ranking and set selection
+   - MMR, DPP, facility location, submodular selection, quotas, and constrained optimization;
+   - Cluster coverage, family caps, scene/person/composition proportions;
+   - Quality floors, gallery cohesion, carousel first-screen behavior, and overall rhythm.
 
-6. 无标签评估与工程
-   - synthetic/programmatic fixtures、metamorphic invariants；
-   - clustering stability、方法分歧、重复残留和集合级多样性指标；
-   - CPU/API 成本、batching、缓存、恢复、确定性、隐私和降级。
+6. Label-free evaluation and engineering
+   - Synthetic/programmatic fixtures, metamorphic invariants;
+   - Clustering stability, cross-method disagreement, residual duplicates, and set-level diversity metrics;
+   - CPU/API cost, batching, caching, recovery, determinism, privacy, and degradation.
 """
 
 
@@ -176,74 +181,78 @@ def build_recon_guidance() -> str:
 
 
 MEETING_INSTRUCTIONS = """\
-=== 会议目标 ===
+=== Meeting goal ===
 
-本次会议要探索、比较并论证适合官网 gallery 自动选图任务的技术方法，
-为最终 Planner 提供充分、经过多轮讨论的技术观点。
+This meeting is to explore, compare, and argue for technical approaches suitable for the official-website gallery
+auto-selection task, providing the final Planner with thorough, multi-round-discussed technical viewpoints.
 
-不要预设最终方案必须是逐图阈值过滤、线性 staged pipeline、单一 composite
-score 排序或任何其他固定架构。参与者从各自技术领域出发，提出认为有价值的
-方法，解释其作用、限制、与其他技术的组合方式，以及什么证据会改变自己的判断。
+Do not assume the final solution must be per-image threshold filtering, a linear staged pipeline, a single composite
+score ranking, or any other fixed architecture. Participants should, from their own technical domain, propose the
+methods they find valuable, explaining their role, limitations, how they combine with other techniques, and what
+evidence would change their judgment.
 
-最终采用的完整方案由专门 Planner 综合全部讨论后生成。
+The complete adopted solution is produced by a dedicated Planner synthesizing the entire discussion afterward.
 
-=== 讨论方式 ===
+=== How to discuss ===
 
-这是规划会议，不是执行会议。参与者可以：
+This is a planning meeting, not an execution meeting. Participants may:
 
-- 自由提出技术观点、候选方法和替代方案；
-- 解释多个技术如何组合；
-- 描述候选数据流、关系或候选架构；
-- 使用简短流程或伪代码帮助表达技术思想；
-- 运行与当前主张强度相匹配的小规模实验；
-- 回应、支持、修正或反驳其他参与者；
-- 撤回自己先前不成立的建议。
+- Freely propose technical viewpoints, candidate methods, and alternatives;
+- Explain how multiple techniques combine;
+- Describe candidate data flows, relationships, or candidate architectures;
+- Use short flow diagrams or pseudocode to help express technical ideas;
+- Run small-scale experiments matched to the strength of their current claim;
+- Respond to, support, correct, or rebut other participants;
+- Withdraw their own earlier suggestions that no longer hold up.
 
-参与者不要：
+Participants should not:
 
-- 把自己的建议宣布为会议已经采用的最终 Plan；
-- 代替 Planner 完整裁决所有技术争议；
-- 展开最终工程目录、完整模块拆分、实施里程碑和运行手册；
-- 因为自己代表某个技术领域，就强行要求最终方案使用该领域的组件。
+- Declare their own suggestion to be the meeting's adopted final Plan;
+- Substitute for the Planner in fully adjudicating all technical disputes;
+- Lay out a final engineering directory, complete module breakdown, implementation milestones, or operations manual;
+- Insist the final solution use components from their own domain merely because they represent that domain.
 
-每轮可以自由组织表达，不需要填写固定表格或结构化记录。请给出完整当前观点，
-并在后续轮次说明相比上一轮有哪些新增、修正或撤回。
+Each round may be freely organized; there is no need to fill in a fixed table or structured record. Give your full
+current position, and in later rounds state what is new, revised, or withdrawn compared with the previous round.
 
-=== 技术覆盖 ===
+=== Technology coverage ===
 
-会议结束前应充分考虑但不强制采用以下技术域：
+Before the meeting ends, the following technical domains should be thoroughly considered, though not necessarily
+adopted:
 
-- 传统图像处理、空间结构和图像取证；
-- 视觉表征、轻量模型和语义特征；
-- 重复检测、相似度、关系建模和聚类；
-- 多模态视觉模型、外部视觉 API 和内容安全；
-- 排名、集合选择、配额和全局优化；
-- 无标签评估、成本、隐私、可靠性和降级。
+- Classical image processing, spatial structure, and image forensics;
+- Visual representation, lightweight models, and semantic features;
+- Duplicate detection, similarity, relationship modeling, and clustering;
+- Multimodal vision models, external vision APIs, and content safety;
+- Ranking, set selection, quotas, and global optimization;
+- Label-free evaluation, cost, privacy, reliability, and degradation.
 
-如果某个技术域最终不值得进入方案，应说明其收益不足、证据不支持、与其他方法
-重复、成本过高或违反约束，而不是在讨论中完全遗漏。
+If a technical domain ultimately isn't worth including in the solution, explain that its benefit is insufficient, the
+evidence doesn't support it, it duplicates another method, its cost is too high, or it violates a constraint, rather
+than simply omitting it from the discussion.
 
-=== 证据原则 ===
+=== Evidence principles ===
 
-当你提出依赖当前数据分布、运行时间、阈值、准确率、错误率或模型能力的经验性
-结论时，应引用已有证据或运行适当的小型实验。不要把很小的样本升级成通用结论。
+When you put forward an empirical conclusion that depends on the current data distribution, runtime, thresholds,
+accuracy, error rate, or model capability, cite existing evidence or run an appropriately sized small experiment. Do
+not upgrade a very small sample into a general conclusion.
 
-尚未验证的算法、架构和技术组合可以作为假设提出，但必须明确其证据状态。
-没有人工 ground truth 时，只能声称测得稳定性、一致性、分歧、确定性事实或代理
-指标，不得把它们表述为真实准确率。
+Unverified algorithms, architectures, and technique combinations may be proposed as hypotheses, but their evidence
+status must be stated explicitly. Without human ground truth, you may only claim measured stability, consistency,
+disagreement, deterministic facts, or proxy metrics -- never state them as true accuracy.
 
-允许验证的对象包括单图信号、模型、embedding、聚类、视觉关系、外部 API、
-内容安全、排序和集合选择，不限于阈值或启发式。
+Objects open to validation include single-image signals, models, embeddings, clustering, visual relationships,
+external APIs, content safety, ranking, and set selection -- not limited to thresholds or heuristics.
 
-=== 任务描述 ===
+=== Task description ===
 
 {participant_task_spec}
 
-=== 图片筛选技术地图 ===
+=== Image-selection technology map ===
 
 {technology_landscape}
 
-=== Stage-1 证据全文 ===
+=== Stage-1 evidence, full text ===
 
 {probing}
 """
