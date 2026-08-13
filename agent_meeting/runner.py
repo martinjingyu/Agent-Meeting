@@ -49,6 +49,7 @@ from typing import Any, Callable
 from research_agent.agent import GeneralAgent
 
 from . import roles as roles_api
+from ._context_limits import COMPACT_TOKEN_THRESHOLD
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig, PlannerConfig
 from .judge import blocking_verdicts_this_round, judge_should_stop
@@ -457,6 +458,7 @@ def _execute_turn(
         provider=provider,
         reasoning_effort=reasoning_effort,
         max_iterations=max_iterations,
+        context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
         self_review=False,
         registry=registry,
         ui=ui,
@@ -1197,6 +1199,7 @@ def _run_planner_step(
         provider=planner.provider,
         reasoning_effort=planner.reasoning_effort,
         max_iterations=planner.max_iterations,
+        context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
         self_review=False,
         registry=registry,
         ui=ui,
@@ -1376,6 +1379,7 @@ def _run_moderator(
         model=model,
         provider=provider,
         max_iterations=config.moderator.max_iterations,
+        context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
         self_review=False,
         registry=registry,
         ui=ui,

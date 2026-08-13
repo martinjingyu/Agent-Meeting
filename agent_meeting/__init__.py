@@ -7,7 +7,17 @@ from research_agent.paths import set_roles_root
 # directory being separate from Agent-Tutorial/sessions/).
 set_roles_root(Path(__file__).resolve().parents[1] / "roles")
 
+# Side effect: raises research_agent's compaction trigger for every GeneralAgent
+# this package builds -- see _context_limits.py for why.
+from ._context_limits import COMPACT_TOKEN_THRESHOLD
+
 from .config import MeetingConfig, ModeratorConfig, ParticipantConfig
 from .runner import run_meeting
 
-__all__ = ["MeetingConfig", "ModeratorConfig", "ParticipantConfig", "run_meeting"]
+__all__ = [
+    "COMPACT_TOKEN_THRESHOLD",
+    "MeetingConfig",
+    "ModeratorConfig",
+    "ParticipantConfig",
+    "run_meeting",
+]
