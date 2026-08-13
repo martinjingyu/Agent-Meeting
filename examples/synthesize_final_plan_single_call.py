@@ -27,13 +27,10 @@ runs/<meeting_id>_single_call_plan.md:
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-from research_agent.llm import LLMClient
 
 # Reused rather than reimplemented -- this is the exact function the framework's own
 # agentic Planner step uses to flatten a meeting's round-by-round turns into one
@@ -42,6 +39,7 @@ from research_agent.llm import LLMClient
 # difference in their output is due to the synthesis approach, not to a
 # transcript-formatting discrepancy between the two scripts.
 from agent_meeting.runner import _round_transcript
+from agent_meeting.single_call_synthesis import stream_synthesize
 from agent_meeting.storage import load_meeting, meeting_path
 
 MODEL = "deepseek-v4-pro"
@@ -172,99 +170,20 @@ def _build_user_message(meeting_id: str) -> tuple[str, dict]:
     return user_message, checkpoint
 
 
-_MAX_ZERO_PROGRESS_RETRIES = 5
-_RETRY_SLEEP_SECONDS = 5.0
-_MAX_CONTINUATIONS = 20
-_COMPLETE_MARKER = "<<PLAN_COMPLETE>>"
-_CONTINUE_PROMPT = (
-    "Your previous response was cut off mid-stream by a connection issue, not because "
-    "you had finished. Continue EXACTLY where you left off -- do not repeat anything "
-    "already written, do not restart, do not add a new heading or preamble, do not "
-    "re-summarize. Resume with the very next word/sentence/section as if there had "
-    f"been no interruption. If you had, in fact, already finished the entire plan, "
-    f"respond with exactly: {_COMPLETE_MARKER}"
-)
-
-
 def synthesize_plan(meeting_id: str) -> str:
     user_message, _checkpoint = _build_user_message(meeting_id)
-    llm = LLMClient(model=MODEL, provider=PROVIDER, reasoning_effort=REASONING_EFFORT)
-    messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message},
-    ]
-    # Streamed rather than a single blocking llm.chat() call: this request is big
-    # (task + full multi-round transcript), and the model can go quiet for a long
-    # stretch before its first visible token -- printing each delta as it arrives
-    # makes actual progress visible instead of a silent multi-minute wait that's
-    # indistinguishable from a hang.
-    #
-    # chat_stream() itself has no automatic retry (see its docstring), so this loop
-    # covers two distinct failure shapes:
-    #  - A connection drop before any delta of the current segment arrived: safe to
-    #    just retry the identical call (nothing to lose or duplicate).
-    #  - A connection drop after some content already streamed: that content is kept
-    #    as-is (never discarded/retried), and the conversation is extended with an
-    #    assistant turn holding exactly what arrived plus a user turn asking the
-    #    model to continue from there -- then a fresh chat_stream() call picks up
-    #    where the last one was cut off. This repeats until a segment completes
-    #    without an exception (the model actually finished), and every segment's
-    #    text is concatenated at the end. The seam between two segments isn't
-    #    guaranteed byte-perfect (the model could drop/add a little whitespace when
-    #    resuming), but no content is lost the way a plain retry-from-scratch would.
-    full_parts: list[str] = []
-    zero_progress_retries = 0
-    continuations = 0
-    while True:
-        segment_parts: list[str] = []
-        interrupted = False
-        try:
-            for delta in llm.chat_stream(messages, tools=[]):
-                print(delta, end="", flush=True)
-                segment_parts.append(delta)
-        except Exception as exc:
-            interrupted = True
-            if not segment_parts:
-                zero_progress_retries += 1
-                if zero_progress_retries > _MAX_ZERO_PROGRESS_RETRIES:
-                    raise
-                print(
-                    f"\n[synthesize] connection failed before any content arrived "
-                    f"({type(exc).__name__}); retrying "
-                    f"({zero_progress_retries}/{_MAX_ZERO_PROGRESS_RETRIES})...",
-                    flush=True,
-                )
-                time.sleep(_RETRY_SLEEP_SECONDS)
-                continue
-            zero_progress_retries = 0
-
-        segment_text = "".join(segment_parts)
-        if segment_text.strip() != _COMPLETE_MARKER:
-            full_parts.append(segment_text)
-
-        if not interrupted:
-            break  # this segment finished on its own -- the plan is done
-
-        continuations += 1
-        if continuations > _MAX_CONTINUATIONS:
-            raise SystemExit(
-                f"gave up after {_MAX_CONTINUATIONS} continuations without the model "
-                "finishing -- the connection may be too unstable right now for a "
-                "request this size. What streamed so far was not saved; rerun the script."
-            )
-        print(
-            f"\n[synthesize] connection dropped mid-response after {len(segment_text):,} "
-            f"chars; requesting a continuation ({continuations}/{_MAX_CONTINUATIONS})...",
-            flush=True,
+    try:
+        return stream_synthesize(
+            SYSTEM_PROMPT,
+            user_message,
+            model=MODEL,
+            provider=PROVIDER,
+            reasoning_effort=REASONING_EFFORT,
+            verbose=True,
+            label="synthesize",
         )
-        messages.append({"role": "assistant", "content": segment_text})
-        messages.append({"role": "user", "content": _CONTINUE_PROMPT})
-
-    print()
-    plan = "".join(full_parts)
-    if not plan.strip():
-        raise SystemExit(f"{MODEL} returned an empty response -- nothing was saved.")
-    return plan
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def main() -> None:

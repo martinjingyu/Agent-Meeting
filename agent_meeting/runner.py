@@ -50,6 +50,7 @@ from research_agent.agent import GeneralAgent
 
 from . import roles as roles_api
 from ._context_limits import COMPACT_TOKEN_THRESHOLD
+from .single_call_synthesis import stream_synthesize
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig, PlannerConfig
 from .judge import blocking_verdicts_this_round, judge_should_stop
@@ -388,7 +389,7 @@ def _execute_turn(
         return cached
 
     recorder = TurnRecorder(agent=participant.name, round_num=round_num, decided_by=decided_by)
-    ui = TrajectoryUI(recorder, verbose=verbose)
+    ui = TrajectoryUI(recorder, verbose=verbose, meeting_id=meeting_id)
 
     role: roles_api.RoleDefinition | None = None
     extra_runtime: dict[str, Any] = {}
@@ -1118,6 +1119,83 @@ def _run_planner_step(
     all_rounds_turns: list[list[dict[str, Any]]],
 ) -> dict[str, Any]:
     planner = config.planner
+    if planner.synthesis not in ("agentic", "single_call"):
+        raise ValueError(f"{planner.name}: synthesis must be 'agentic' or 'single_call', got {planner.synthesis!r}")
+    if planner.synthesis == "single_call":
+        if not planner.system_prompt:
+            raise ValueError(
+                f"{planner.name}: synthesis=\"single_call\" requires an explicit system_prompt "
+                "-- there is no generic fallback the way _default_planner_system_prompt() "
+                "provides for \"agentic\", because the whole point of this mode is a "
+                "prompt that demands the output be self-contained and Executor-legible. "
+                "See examples/synthesize_final_plan_single_call.py's SYSTEM_PROMPT."
+            )
+        if config.planner_inline_rounds is not None:
+            raise ValueError(
+                f"{planner.name}: synthesis=\"single_call\" has no file tools to fetch "
+                "earlier rounds the way the agentic Planner can, so "
+                "config.planner_inline_rounds must be None (always see the full "
+                f"transcript) -- got {config.planner_inline_rounds!r}"
+            )
+        return _run_planner_step_single_call(config, meeting_id, all_rounds_turns)
+    return _run_planner_step_agentic(config, meeting_id, all_rounds_turns)
+
+
+def _run_planner_step_single_call(
+    config: MeetingConfig,
+    meeting_id: str,
+    all_rounds_turns: list[list[dict[str, Any]]],
+) -> dict[str, Any]:
+    planner = config.planner
+    if config.verbose:
+        log(
+            "meeting",
+            f"planner ({planner.name}): synthesizing final Plan from "
+            f"{len(all_rounds_turns)} round(s) with a single streamed call...",
+        )
+
+    transcript = _round_transcript(all_rounds_turns)
+    user_message = (
+        f"=== Task ===\n{_question_with_planning_constraints(config.question)}\n\n"
+        f"=== Full Discussion (all {len(all_rounds_turns)} round(s), all participants) ===\n"
+        f"{transcript}\n\n"
+        "Write the final Plan now."
+    )
+
+    recorder = TurnRecorder(agent=planner.name, round_num=0, decided_by="planner")
+    recorder.start_time = now()
+    plan_text = stream_synthesize(
+        f"{planner.system_prompt}\n\n{_AUTOMATION_ONLY_TASK_CONSTRAINTS}",
+        user_message,
+        model=planner.model,
+        provider=planner.provider,
+        reasoning_effort=planner.reasoning_effort,
+        verbose=config.verbose,
+        label=f"planner:{planner.name}",
+    )
+    recorder.end_time = now()
+    recorder.output = plan_text
+
+    turn = recorder.to_turn_dict()
+    turn["role"] = "planner"
+    turn["role_ref"] = None
+
+    return {
+        "step_index": None,
+        "step_start": iso(recorder.start_time),
+        "step_end": iso(recorder.end_time),
+        "decided_by": "planner",
+        "trigger_reason": "planner synthesizes final Plan (single_call)",
+        "turns": [turn],
+    }
+
+
+def _run_planner_step_agentic(
+    config: MeetingConfig,
+    meeting_id: str,
+    all_rounds_turns: list[list[dict[str, Any]]],
+) -> dict[str, Any]:
+    planner = config.planner
     meeting_shared_dir = shared_dir(meeting_id)
 
     inline_rounds = config.planner_inline_rounds
@@ -1152,7 +1230,7 @@ def _run_planner_step(
         log("meeting", f"planner ({planner.name}): synthesizing final Plan from {len(all_rounds_turns)} round(s)...")
 
     recorder = TurnRecorder(agent=planner.name, round_num=0, decided_by="planner")
-    ui = TrajectoryUI(recorder, verbose=config.verbose)
+    ui = TrajectoryUI(recorder, verbose=config.verbose, meeting_id=meeting_id)
 
     planner_shared_dir = participant_shared_dir(meeting_id, planner.name)
     system_prompt = planner.system_prompt or _default_planner_system_prompt(planner)
@@ -1346,7 +1424,7 @@ def _run_moderator(
 
     session_path = sessions_dir(meeting_id) / "moderator.json"
     recorder = TurnRecorder(agent=config.moderator.name, round_num=0, decided_by="moderator")
-    ui = TrajectoryUI(recorder, verbose=config.verbose)
+    ui = TrajectoryUI(recorder, verbose=config.verbose, meeting_id=meeting_id)
 
     role: roles_api.RoleDefinition | None = None
     extra_runtime: dict[str, Any] = {}

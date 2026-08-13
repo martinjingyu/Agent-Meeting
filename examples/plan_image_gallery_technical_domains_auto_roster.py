@@ -361,15 +361,43 @@ unverified, based on pixels you looked at yourself this meeting.
 
 PLANNER_SYSTEM_PROMPT = """\
 You are Planner, the synthesis agent for a multi-round technical planning meeting.
+You run as a single streamed response, not a tool-calling agent -- no file access,
+no shared/ directory, one pass. The full discussion (every round, every
+participant) is included directly in the message you receive; there is no
+transcript file to go read.
 
 Participants were organized by technology domain and deliberately wrote free-form
 technical viewpoints rather than a shared structured plan. Your job is to read the
-entire discussion, inspect relevant shared artifacts, resolve disagreements, and
-produce one coherent, executable gallery-selection plan.
+entire discussion below, resolve disagreements, and produce one coherent,
+executable gallery-selection plan in a single pass.
 
-If the initial message only includes recent rounds and gives a path to the full
-transcript, you MUST read the full transcript before finalizing. Do not treat the last
-few rounds as the whole meeting.
+=== The single most important constraint on this document ===
+
+The Executor who implements this plan will read ONLY the document you produce right
+now. They will never see the meeting transcript below, never see any script or file
+a participant wrote during the meeting, never know this meeting happened at all.
+That has concrete consequences for how you must write:
+
+- Resolve every meeting-internal reference before it reaches the output. Do not
+  write "the relation types discussed", "as argued in an earlier round", "per
+  ClassicalVision's proposal", "see shared/<participant>/report.md", or any other
+  phrasing that only makes sense to someone who read the meeting. State the actual
+  content directly and completely, as if you derived it yourself.
+- Translate ad hoc terminology into standard engineering language. Participants
+  sometimes invent a shorthand name for a technique, a data structure, or a
+  category that made sense in the flow of discussion but is not a term the
+  Executor will recognize cold. Either replace it with the standard name for what
+  it actually is, or, if no standard term fits, define it plainly on first use and
+  then use that definition consistently.
+- Completeness over brevity. Never defer a detail to "see the discussion" or "as
+  established earlier" -- if a value, threshold, formula, or decision is needed to
+  implement the plan, it must be written in this document (in the appendix if it's
+  dense reference material, but written). An Executor who has only this file must
+  be able to build the entire system without asking a follow-up question about
+  what a term means or where a number came from.
+- Do not name participants, round numbers, or the meeting process itself anywhere
+  in the output. The document should read as if a single engineer designed the
+  whole thing, not as a summary of who said what.
 
 Do not mechanically include every technique. For each important technical choice,
 distinguish:
@@ -439,8 +467,11 @@ colleague, not like you are filling out a spec template. That means:
   the appendix holds the *values*, the main section still owns the *why*.
 
 The plan must be detailed enough for an Executor to implement without making new
-methodology-level decisions. Save it as `final_gallery_selection_plan_technical_domains.md`
-in your workspace using file tools, then respond with the same content.
+methodology-level decisions.
+
+Respond with ONLY the final plan itself, formatted as Markdown, starting with a
+top-level heading. No preamble, no meta-commentary about the meeting or your own
+process.
 """
 
 
@@ -554,7 +585,11 @@ def main() -> None:
             model="gpt-5.6-sol",
             provider="codex",
             reasoning_effort="high",
-            max_iterations=20,
+            # Single streamed LLM call instead of an agentic tool loop -- see
+            # agent_meeting.single_call_synthesis.stream_synthesize and
+            # PlannerConfig.synthesis's docstring. max_iterations is ignored in this
+            # mode (no tool loop to bound).
+            synthesis="single_call",
         ),
     )
 

@@ -78,6 +78,22 @@ class PlannerConfig:
     tools, which can take a few tool-call iterations."""
     vision_capable: bool = False
     """Same explicit opt-in as ParticipantConfig.vision_capable -- see there."""
+    synthesis: str = "agentic"
+    """"agentic" (default): the Planner is a GeneralAgent tool loop -- it can read
+    files under shared/, explore, and writes the final Plan to disk itself via file
+    tools, using max_iterations/vision_capable above.
+
+    "single_call": the Planner is one streamed LLM call instead (see
+    agent_meeting.single_call_synthesis.stream_synthesize) -- no tools, no file
+    access, max_iterations/vision_capable are ignored. Only model/provider/
+    reasoning_effort/system_prompt apply. system_prompt is REQUIRED in this mode
+    (there is no generic fallback the way _default_planner_system_prompt() provides
+    for "agentic") -- the entire value of this mode comes from a system_prompt that
+    demands the output be self-contained and translated into plain engineering
+    language, since the Executor who implements the plan will never see the
+    meeting transcript or any shared/ artifact the way an agentic Planner's own
+    reader might reference. See examples/synthesize_final_plan_single_call.py's
+    SYSTEM_PROMPT for a template to copy and adapt."""
 
 
 @dataclass

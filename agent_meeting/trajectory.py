@@ -22,7 +22,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from .storage import compaction_log_path
+
 _print_lock = threading.Lock()
+_compaction_log_lock = threading.Lock()
 
 
 def log(label: str, message: str) -> None:
@@ -131,10 +134,11 @@ class TrajectoryUI:
     and (unless verbose=False) prints a one-line progress update per event so a real
     run shows visible progress instead of going silent until the whole meeting ends."""
 
-    def __init__(self, recorder: TurnRecorder, verbose: bool = True) -> None:
+    def __init__(self, recorder: TurnRecorder, verbose: bool = True, meeting_id: str | None = None) -> None:
         self.recorder = recorder
         self.iteration = 0
         self.verbose = verbose
+        self.meeting_id = meeting_id
         self._open_tool: tuple[str, dict[str, Any], datetime] | None = None
 
     def _log(self, message: str) -> None:
@@ -190,6 +194,14 @@ class TrajectoryUI:
             "duration_ms": None,
         })
         self._log(f"context compacted: {reason}")
+        if self.meeting_id:
+            line = (
+                f"{_iso(_now())} round={self.recorder.round} agent={self.recorder.agent} "
+                f"decided_by={self.recorder.decided_by} iteration={self.iteration} reason={reason}\n"
+            )
+            with _compaction_log_lock:
+                with open(compaction_log_path(self.meeting_id), "a", encoding="utf-8") as f:
+                    f.write(line)
 
     def event(self, label: str, detail: str = "") -> None:
         pass

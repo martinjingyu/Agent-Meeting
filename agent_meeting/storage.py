@@ -23,6 +23,17 @@ def sessions_dir(meeting_id: str) -> Path:
     return path
 
 
+def compaction_log_path(meeting_id: str) -> Path:
+    """One line appended per compaction event, across every agent in this meeting --
+    see TrajectoryUI.compact(). Meant to stay empty in normal operation now that
+    COMPACT_TOKEN_THRESHOLD is raised well above what a meeting turn should ever
+    need (agent_meeting/_context_limits.py); any line in this file means some turn
+    still hit the threshold and is worth looking at."""
+    path = RUNS_DIR / meeting_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "compaction_log.txt"
+
+
 def participant_workspace_dir(meeting_id: str, participant_name: str) -> Path:
     """Private workspace for an ad-hoc (non-role_ref) participant -- ephemeral, tied
     to this one meeting (unlike a role's own persistent roles/<name>/workspace/,
