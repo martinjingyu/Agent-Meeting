@@ -575,7 +575,7 @@ def main() -> None:
     config = MeetingConfig(
         question=build_question(probing),
         mode="planning_rounds",
-        max_rounds=10,
+        max_rounds=6,
         participants=_build_participants(roster),
         planner_inline_rounds=None,
         planning_participant_addendum=PARTICIPANT_DISCUSSION_ADDENDUM,

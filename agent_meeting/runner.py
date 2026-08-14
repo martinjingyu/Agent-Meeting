@@ -49,7 +49,7 @@ from typing import Any, Callable
 from research_agent.agent import GeneralAgent
 
 from . import roles as roles_api
-from ._context_limits import COMPACT_TOKEN_THRESHOLD
+from ._context_limits import AUTO_COMPACT, COMPACT_TOKEN_THRESHOLD
 from .single_call_synthesis import stream_synthesize
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig, PlannerConfig
@@ -460,6 +460,7 @@ def _execute_turn(
         reasoning_effort=reasoning_effort,
         max_iterations=max_iterations,
         context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
+        auto_compact=AUTO_COMPACT,
         self_review=False,
         registry=registry,
         ui=ui,
@@ -1176,9 +1177,21 @@ def _run_planner_step_single_call(
     recorder.end_time = now()
     recorder.output = plan_text
 
+    # single_call has no file tools to save this itself (unlike the agentic path,
+    # where the model's own system prompt tells it to write the plan to its
+    # workspace) -- without this, the only copy of the plan lives inside
+    # runs/<meeting_id>.json's final_response field, which is easy to miss (that
+    # file is typically hundreds of MB of full turn history) and easy to lose in
+    # scrollback if the run was non-interactive/backgrounded.
+    plan_path = participant_workspace_dir(meeting_id, planner.name) / "final_plan.md"
+    plan_path.write_text(plan_text, encoding="utf-8")
+    if config.verbose:
+        log("meeting", f"planner ({planner.name}): final Plan saved to {plan_path}")
+
     turn = recorder.to_turn_dict()
     turn["role"] = "planner"
     turn["role_ref"] = None
+    turn["saved_plan_path"] = str(plan_path)
 
     return {
         "step_index": None,
@@ -1278,6 +1291,7 @@ def _run_planner_step_agentic(
         reasoning_effort=planner.reasoning_effort,
         max_iterations=planner.max_iterations,
         context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
+        auto_compact=AUTO_COMPACT,
         self_review=False,
         registry=registry,
         ui=ui,
@@ -1458,6 +1472,7 @@ def _run_moderator(
         provider=provider,
         max_iterations=config.moderator.max_iterations,
         context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
+        auto_compact=AUTO_COMPACT,
         self_review=False,
         registry=registry,
         ui=ui,

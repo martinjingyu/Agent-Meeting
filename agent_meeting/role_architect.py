@@ -21,7 +21,7 @@ from typing import Any
 
 from research_agent.agent import GeneralAgent
 
-from ._context_limits import COMPACT_TOKEN_THRESHOLD
+from ._context_limits import AUTO_COMPACT, COMPACT_TOKEN_THRESHOLD
 from .role_architect_tools import register_role_architect_tools
 from .storage import participant_workspace_dir
 from .tools_setup import build_participant_registry
@@ -149,6 +149,7 @@ def design_domain_roster(
         reasoning_effort=reasoning_effort,
         max_iterations=max_iterations,
         context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
+        auto_compact=AUTO_COMPACT,
         self_review=False,
         registry=registry,
         sub_agent=True,
