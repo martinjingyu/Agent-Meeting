@@ -71,13 +71,50 @@ def _parse_judge_output(raw: str) -> dict[str, Any] | None:
     return data
 
 
-def judge_should_stop(question: str, transcript: str) -> dict[str, Any]:
+def judge_should_stop(
+    question: str,
+    transcript: str,
+    *,
+    round_num: int | None = None,
+    max_rounds: int | None = None,
+) -> dict[str, Any]:
+    rounds_left = None
+    if round_num is not None and max_rounds is not None:
+        rounds_left = max_rounds - round_num
+    if rounds_left is not None and rounds_left <= 0:
+        budget_note = (
+            f"\n=== Round budget ===\nThis was round {round_num} of {max_rounds} -- the "
+            "meeting's round budget is exhausted; there is no further round available "
+            "regardless of what you decide here. A stop=false verdict will NOT produce "
+            "another round of discussion; it only tells the Planner that open gaps "
+            "remain. So: do not simply say 'continue' and leave issues open the way you "
+            "would if another round were coming. Instead, for every genuine unresolved "
+            "issue you would otherwise defer to a future round, resolve it yourself as "
+            "far as the existing transcript allows (state which participant's position "
+            "you find more supported and why) so unresolved_issues becomes concrete "
+            "guidance the Planner can act on directly, not an open question with no one "
+            "left to answer it. Set stop=true if the remaining gaps are now reduced to "
+            "Planner-resolvable choices this way.\n"
+        )
+    elif rounds_left is not None:
+        budget_note = (
+            f"\n=== Round budget ===\nThis was round {round_num} of {max_rounds} -- "
+            f"{rounds_left} round(s) remain after this one. Weigh that when deciding: an "
+            "issue worth another full round of participant interaction is still "
+            "stop=false, but if very few rounds remain, prefer flagging issues in a form "
+            "specific enough that participants can close them quickly (name the exact "
+            "test or reconciliation needed) rather than leaving them open-ended.\n"
+        )
+    else:
+        budget_note = ""
+
     prompt = (
         "You are the gatekeeper for a planning discussion. Below is the task and every "
         "round of participant contributions so far (points, suggestions, and ideas only "
         "-- no Plan has been written yet).\n\n"
         f"=== Task ===\n{question}\n\n"
         f"=== Discussion So Far ===\n{transcript}\n\n"
+        f"{budget_note}"
         "Your job is NOT to decide whether a Planner could write some plan now. Your "
         "job is to decide whether another participant discussion round would still "
         "create meaningful value before the Planner writes the final Plan.\n\n"

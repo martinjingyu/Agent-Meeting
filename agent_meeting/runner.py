@@ -42,6 +42,7 @@ the moderator's tool-call history).
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import json
 from datetime import datetime
 from typing import Any, Callable
@@ -69,6 +70,7 @@ from .storage import (
 )
 from .tools_setup import build_participant_registry
 from .trajectory import LoggingLLMClient, TrajectoryUI, TurnRecorder, iso, log, now, summarize_turn_actions
+from .tui import MeetingProgress
 
 
 def _assemble_meeting_dict(
@@ -374,6 +376,8 @@ def _execute_turn(
     round_aware: bool = False,
     extra_system_prompt: str | None = None,
     context_meta: dict[str, Any] | None = None,
+    progress: MeetingProgress | None = None,
+    max_rounds: int | None = None,
 ) -> dict[str, Any]:
     """Shared low-level turn executor: role resolution -> GeneralAgent construction ->
     run -> record -> cache. `round_num` here is only a cache-key/log-label -- for
@@ -381,7 +385,10 @@ def _execute_turn(
     `context_meta`, when given, is saved onto the turn dict as-is (next to session_id/
     session_path) -- it's how callers that build the user_message themselves (e.g.
     _run_planning_participant_turn's context-budget trimming and overflow retries)
-    surface what happened to this turn's context alongside its full saved session."""
+    surface what happened to this turn's context alongside its full saved session.
+    `progress`/`max_rounds` are optional -- only planning_rounds' live TUI passes them;
+    every other caller leaves them None and TrajectoryUI simply skips the live-display
+    updates, exactly as before this was added."""
     cached = load_turn_cache(meeting_id, round_num, participant.name)
     if cached is not None:
         if verbose:
@@ -389,7 +396,7 @@ def _execute_turn(
         return cached
 
     recorder = TurnRecorder(agent=participant.name, round_num=round_num, decided_by=decided_by)
-    ui = TrajectoryUI(recorder, verbose=verbose, meeting_id=meeting_id)
+    ui = TrajectoryUI(recorder, verbose=verbose, meeting_id=meeting_id, progress=progress, max_rounds=max_rounds)
 
     role: roles_api.RoleDefinition | None = None
     extra_runtime: dict[str, Any] = {}
@@ -863,15 +870,30 @@ def _build_planning_round_message(
     all_rounds_turns: list[list[dict[str, Any]]],
     own_agent: str | None = None,
     budget: int = _ROUND_MESSAGE_TOKEN_BUDGET,
+    max_rounds: int | None = None,
 ) -> tuple[str, int]:
     """Returns (message, dropped_rounds) -- dropped_rounds is always 0 for round 1
     (there's no transcript yet to trim), and lets callers record what happened to this
     turn's context (see _run_planning_participant_turn's context_meta)."""
     constrained_question = _question_with_planning_constraints(question)
+    # Told plainly, not just left to infer from round numbering, so a participant
+    # sitting on an open cross-participant conflict prioritizes reconciling it over
+    # launching a new exploratory test that cannot land before the Planner reads this
+    # transcript -- the judge gets the equivalent framing in judge.py's budget_note.
+    final_round_note = (
+        f"\nThis is the LAST round (round {round_num} of {max_rounds}) before a Planner "
+        "synthesizes the final Plan from this transcript -- there will be no round after "
+        "this one to answer a question you raise now or finish a test you start now. If "
+        "you have an open disagreement with another participant, or an in-flight test "
+        "whose result would change a recommendation, prioritize closing it this round "
+        "over opening new lines of investigation.\n"
+        if max_rounds is not None and round_num >= max_rounds
+        else ""
+    )
     if round_num == 1:
         return (
             f"{constrained_question}\n\n"
-            f"=== Round {round_num} ===\n"
+            f"=== Round {round_num} ==={final_round_note}\n"
             "Contribute your points, suggestions and ideas for how to approach this. "
             "Remember: no Plan, no pipeline, no step-by-step design -- ideas and "
             "considerations only.\n\n"
@@ -892,7 +914,7 @@ def _build_planning_round_message(
     message = (
         f"=== Original meeting question ===\n{constrained_question}\n\n"
         f"=== Discussion so far (all participants, all rounds) ==={omission_note}\n{transcript}\n\n"
-        f"=== Round {round_num} ===\n"
+        f"=== Round {round_num} ==={final_round_note}\n"
         "Building on the discussion so far, refine or add new points, suggestions and "
         "ideas. You may agree, disagree, or extend what others said. Still no Plan or "
         "pipeline -- ideas and considerations only. You MUST call submit_round_answer "
@@ -940,12 +962,15 @@ def _run_planning_participant_turn(
     all_rounds_turns: list[list[dict[str, Any]]],
     verbose: bool,
     participant_addendum: str,
+    max_rounds: int,
+    progress: MeetingProgress | None = None,
 ) -> dict[str, Any]:
     budget = _ROUND_MESSAGE_TOKEN_BUDGET
     overflow_errors: list[str] = []
     for attempt in range(_CONTEXT_OVERFLOW_MAX_RETRIES + 1):
         round_message, dropped_rounds = _build_planning_round_message(
             question, round_num, all_rounds_turns, own_agent=participant.name, budget=budget,
+            max_rounds=max_rounds,
         )
         # Saved onto the turn dict (next to session_id/session_path) so the meeting's
         # saved record shows, for every turn, whether its context was trimmed and
@@ -964,6 +989,7 @@ def _run_planning_participant_turn(
                 decided_by="script", round_aware=round_num > 1,
                 extra_system_prompt=participant_addendum,
                 context_meta=context_meta,
+                progress=progress, max_rounds=max_rounds,
             )
         except Exception as exc:
             # round 1 has no transcript to trim yet -- constrained_question itself is
@@ -987,6 +1013,8 @@ def _run_planning_round(
     meeting_id: str,
     round_num: int,
     all_rounds_turns: list[list[dict[str, Any]]],
+    max_rounds: int,
+    progress: MeetingProgress | None = None,
 ) -> dict[str, Any]:
     step_start = now()
     participant_addendum = (
@@ -1006,6 +1034,8 @@ def _run_planning_round(
                 all_rounds_turns,
                 config.verbose,
                 participant_addendum,
+                max_rounds,
+                progress,
             ): p.name
             for p in config.participants
         }
@@ -1029,6 +1059,7 @@ def _run_judge_step(
     config: MeetingConfig,
     round_num: int,
     all_rounds_turns: list[list[dict[str, Any]]],
+    max_rounds: int,
 ) -> tuple[bool, dict[str, Any]]:
     if config.verbose:
         log("meeting", f"round {round_num}: all participant(s) done, asking judge whether to stop...")
@@ -1037,6 +1068,8 @@ def _run_judge_step(
     decision = judge_should_stop(
         _question_with_planning_constraints(config.question),
         _round_transcript(all_rounds_turns),
+        round_num=round_num,
+        max_rounds=max_rounds,
     )
     judge_end = now()
 
@@ -1109,6 +1142,17 @@ def _default_planner_system_prompt(planner: PlannerConfig) -> str:
         "appendix so the main sections stay readable as an argument, not a lookup "
         "table -- but keep the reasoning itself in the main sections, not just the "
         "values.\n\n"
+        "Include a dedicated 'Overridden participant recommendations' section (may be "
+        "empty) listing every case where two or more participants independently "
+        "converged on a specific, evidence-backed recommendation -- a measured number, "
+        "a tested threshold, a design reached from separate experiments -- and your "
+        "final Plan does something different. For each entry: name the recommendation, "
+        "cite the specific measured evidence behind it (the number, not just "
+        "'participants found X'), and state why the Plan overrides it and what that "
+        "costs. This applies even when the reason for overriding it is a design "
+        "principle you are introducing yourself that no participant raised -- silently "
+        "replacing a measured, converged recommendation with an unstated preference is "
+        "exactly what this section exists to make visible.\n\n"
         "Save the final Plan to a file in your workspace using the file tools, then "
         "respond with the same Plan content."
     )
@@ -1353,21 +1397,38 @@ def _run_planning_rounds(
     )
 
     if not (already_stopped and max_rounds_override is None):
-        for round_num in range(start_round, max_rounds + 1):
-            round_step = _run_planning_round(config, meeting_id, round_num, all_rounds_turns)
-            all_rounds_turns.append(round_step["turns"])
-            all_steps.append(round_step)
+        # MeetingProgress renders a live overall-round bar plus one row per
+        # participant (round/max-rounds, and the tool call or LLM-input preview
+        # it's currently waiting on) -- purely a terminal presentation layer on
+        # top of the same TrajectoryUI/TurnRecorder events already captured for
+        # the JSON record. Only constructed when config.verbose (matches the
+        # existing quiet-mode intent) and self-disables when stdout isn't a real
+        # terminal, so a piped/logged run is unaffected either way.
+        progress_cm = (
+            MeetingProgress(max_rounds=max_rounds, agent_names=[p.name for p in config.participants])
+            if config.verbose
+            else contextlib.nullcontext(None)
+        )
+        with progress_cm as progress:
+            for round_num in range(start_round, max_rounds + 1):
+                if progress is not None:
+                    progress.set_round(round_num)
+                round_step = _run_planning_round(
+                    config, meeting_id, round_num, all_rounds_turns, max_rounds, progress,
+                )
+                all_rounds_turns.append(round_step["turns"])
+                all_steps.append(round_step)
 
-            should_stop, judge_step = _run_judge_step(config, round_num, all_rounds_turns)
-            all_steps.append(judge_step)
+                should_stop, judge_step = _run_judge_step(config, round_num, all_rounds_turns, max_rounds)
+                all_steps.append(judge_step)
 
-            for i, step in enumerate(all_steps):
-                step["step_index"] = i
-            if checkpoint is not None:
-                checkpoint(all_steps)
+                for i, step in enumerate(all_steps):
+                    step["step_index"] = i
+                if checkpoint is not None:
+                    checkpoint(all_steps)
 
-            if should_stop:
-                break
+                if should_stop:
+                    break
 
     planner_step = _run_planner_step(config, meeting_id, all_rounds_turns)
     all_steps.append(planner_step)

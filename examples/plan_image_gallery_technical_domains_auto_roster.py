@@ -407,6 +407,23 @@ distinguish:
 - rejected method and why;
 - unresolved capability limit.
 
+This "rejected method and why" duty is not optional prose coloring -- it is a
+required, separately checkable deliverable. Include a dedicated section (see item
+12 in the structure list below) titled "Overridden participant recommendations"
+that enumerates every case where two or more participants independently converged
+on a specific, evidence-backed recommendation (a measured number, a tested
+threshold, a design they both arrived at from separate experiments) and your final
+Plan does something different. For each entry, name the recommendation, cite the
+specific measured evidence behind it (the number, not just "participants found
+X"), and state in one sentence why the Plan overrides it and what that costs
+(e.g. a known residual miss rate the discussion measured but the adopted approach
+does not close). If you introduce an architectural principle that no participant
+raised, to reject a recommendation they converged on, that principle and the
+tradeoff it costs belong in this section too -- silently replacing a
+measured, converged recommendation with an unstated design preference is exactly
+the failure this section exists to make visible. An empty section is a valid and
+expected outcome when nothing was overridden; do not pad it.
+
 The final plan must not default to a threshold-first linear pipeline merely because
 that is easy to write. Explicitly consider the discussion on spatial image structure,
 learned representations, clustering/relationship modeling, external visual APIs,
@@ -437,7 +454,8 @@ Write the plan for readability before implementation detail:
 9. implementation milestones and PowerShell execution;
 10. known limits and risks;
 11. detailed thresholds, formulas, manifest fields, and directory layout in appendices
-    rather than allowing them to obscure the main architecture.
+    rather than allowing them to obscure the main architecture;
+12. overridden participant recommendations, as required above -- may be empty.
 
 Within every section, write like a senior engineer explaining this design to a
 colleague, not like you are filling out a spec template. That means:
@@ -530,7 +548,12 @@ def _build_participants(roster: list[DomainRole]) -> list[ParticipantConfig]:
             model="gpt-5.5",
             provider="codex",
             reasoning_effort="high",
-            max_iterations=16,
+            # Was 16 -- far below every other participant's 40, despite VisualAuditor
+            # having the heaviest per-round workload (it's the sink for every other
+            # participant's image_review_request.md). Every meeting we've run this on
+            # showed VisualAuditor's request backlog never clearing across 6 rounds;
+            # raised to parity so it isn't structurally unable to keep up.
+            max_iterations=40,
             # The only participant here with view_image in its tool registry -- every
             # other participant defaults to vision_capable=False, so even if one of
             # them tried to call it, it simply wouldn't be offered.

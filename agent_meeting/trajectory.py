@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Any
 
 from .storage import compaction_log_path
+from .tui import MeetingProgress, preview as _tui_preview
 
 _print_lock = threading.Lock()
 _compaction_log_lock = threading.Lock()
@@ -68,6 +69,33 @@ def _parse_success(raw: str) -> bool:
 
 def _preview(raw: str, max_len: int = 800) -> str:
     return raw if len(raw) <= max_len else raw[:max_len] + "…"
+
+
+def _message_text(content: Any) -> str:
+    """A message's `content` is normally a string, but a multimodal turn (e.g.
+    view_image's injected image_url parts) makes it a list of content parts --
+    this pulls just the text pieces out for a TUI status preview, same
+    tolerance _user_message_text()-style helpers elsewhere in this codebase
+    apply to multimodal content."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            str(part.get("text") or "") for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return ""
+
+
+def _last_message_text(messages: list[dict[str, Any]]) -> str:
+    """The most recent non-empty message content in a request -- what the model
+    is about to respond to -- used as the TUI's "waiting for LLM" status line.
+    Walks backward so a trailing empty/system message doesn't win."""
+    for msg in reversed(messages):
+        text = _message_text(msg.get("content")).strip()
+        if text:
+            return text
+    return "(no text content)"
 
 
 def summarize_turn_actions(turn: dict[str, Any], max_len_per_line: int = 150) -> str:
@@ -134,12 +162,25 @@ class TrajectoryUI:
     and (unless verbose=False) prints a one-line progress update per event so a real
     run shows visible progress instead of going silent until the whole meeting ends."""
 
-    def __init__(self, recorder: TurnRecorder, verbose: bool = True, meeting_id: str | None = None) -> None:
+    def __init__(
+        self,
+        recorder: TurnRecorder,
+        verbose: bool = True,
+        meeting_id: str | None = None,
+        progress: MeetingProgress | None = None,
+        max_rounds: int | None = None,
+    ) -> None:
         self.recorder = recorder
         self.iteration = 0
         self.verbose = verbose
         self.meeting_id = meeting_id
+        self.progress = progress
+        self.max_rounds = max_rounds if max_rounds is not None else recorder.round
         self._open_tool: tuple[str, dict[str, Any], datetime] | None = None
+        if self.progress is not None:
+            self.progress.update_agent(
+                self.recorder.agent, round_num=self.recorder.round, phase="idle", detail="starting turn…",
+            )
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -156,7 +197,13 @@ class TrajectoryUI:
 
     def tool_start(self, name: str, args: dict[str, Any]) -> None:
         self._open_tool = (name, args, _now())
-        self._log(f"iter {self.iteration}: tool_call {name}({_preview(json.dumps(args, ensure_ascii=False), 100)})")
+        args_preview = _preview(json.dumps(args, ensure_ascii=False), 100)
+        self._log(f"iter {self.iteration}: tool_call {name}({args_preview})")
+        if self.progress is not None:
+            self.progress.update_agent(
+                self.recorder.agent, round_num=self.recorder.round, phase="tool_call",
+                detail=f"{name}({args_preview})",
+            )
 
     def tool_done(self, name: str, result: str) -> None:
         if self._open_tool is None:
@@ -215,6 +262,11 @@ class TrajectoryUI:
     def final_answer(self, text: str, iterations: int) -> None:
         # recorder.output is set by the orchestrator from agent.run()'s return value
         self._log(f"finished after {iterations} iteration(s)")
+        if self.progress is not None:
+            self.progress.update_agent(
+                self.recorder.agent, round_num=self.recorder.round, phase="done",
+                detail=f"finished after {iterations} iteration(s)",
+            )
 
     def saved(self, path: str) -> None:
         self.recorder.session_path = path
@@ -280,6 +332,11 @@ class LoggingLLMClient:
         return self._inner.provider
 
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:
+        if self._ui.progress is not None:
+            self._ui.progress.update_agent(
+                self._recorder.agent, round_num=self._recorder.round, phase="waiting_llm",
+                detail=_tui_preview(_last_message_text(messages)),
+            )
         start = _now()
         response = self._inner.chat(messages, tools)
         end = _now()
