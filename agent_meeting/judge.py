@@ -2,16 +2,28 @@
 discussion has surfaced enough for the Planner to synthesize a Plan, or whether
 another round would meaningfully add something.
 
-A single deterministic LLM call (same pattern as aggregate.py's _aggregate_llm),
-not a GeneralAgent turn -- the judge only ever reads a transcript and answers a
-strict stop/continue, it never needs tools. Always Codex gpt-5.5 -- this is an
-internal gatekeeping decision, not something a caller tunes per meeting the way
-aggregation_model/provider are.
+Two implementations, chosen by MeetingConfig.human_checkin:
 
-The judge must emit its reasoning (open issues weighed, per-participant coverage)
-before the verdict, as JSON -- not a bare "1"/"0". Two reasons: (1) auditability --
-a bare digit gives no way to check after the fact whether a stop was justified;
-(2) quality -- complete_text() only ever returns the model's final visible content,
+- False (the default): judge_should_stop(), a single deterministic LLM call (same
+  pattern as aggregate.py's _aggregate_llm), not a GeneralAgent turn -- the judge
+  only ever reads a transcript and answers a strict stop/continue, it never needs
+  tools. Always Codex gpt-5.5 -- an internal gatekeeping decision, not something a
+  caller tunes per meeting the way aggregation_model/provider are.
+
+- True: run_interactive_judge(), a GeneralAgent tool loop with exactly two tools
+  (judge_tools.build_judge_registry: ask_user_question, submit_judgment) instead of
+  one fixed completion. This lets the judge have a genuine multi-turn conversation
+  with the human stakeholder -- ask a question, get an answer, ask a follow-up if
+  the answer shows they didn't understand, repeat for as many exchanges as it takes
+  -- before finishing with its stop/continue verdict, rather than a single Q+A
+  bolted on after a verdict already reached without human input. See runner.py's
+  _run_judge_step for how the two are dispatched and how run_interactive_judge's
+  qa log gets folded into the round's transcript.
+
+Both must emit their reasoning (open issues weighed, per-participant coverage)
+before the verdict, not a bare "1"/"0". Two reasons: (1) auditability -- a bare
+digit gives no way to check after the fact whether a stop was justified; (2)
+quality -- complete_text() only ever returns the model's final visible content,
 discarding any hidden thinking-mode trace, so if the verdict is the only visible
 token the "reasoning" the reasoning_effort pays for never actually informs
 anything beyond what's already baked into token probabilities. Making the model
@@ -26,11 +38,26 @@ import json
 import re
 from typing import Any
 
+from research_agent.agent import GeneralAgent
 from research_agent.llm import LLMClient
+
+from ._context_limits import AUTO_COMPACT, COMPACT_TOKEN_THRESHOLD
+from .judge_tools import build_judge_registry
+from .storage import participant_workspace_dir
 
 JUDGE_MODEL = "gpt-5.5"
 JUDGE_PROVIDER = "codex"
 JUDGE_REASONING_EFFORT = "medium"
+
+INTERACTIVE_JUDGE_MODEL = "gpt-5.5"
+INTERACTIVE_JUDGE_PROVIDER = "codex"
+INTERACTIVE_JUDGE_REASONING_EFFORT = "medium"
+INTERACTIVE_JUDGE_MAX_ITERATIONS = 12
+"""Well above what a normal exchange needs (each back-and-forth is 2 iterations: one
+ask_user_question call, one model turn reading the answer) -- generous rather than
+tight, since a genuinely confused human working through 3-4 clarifying rounds before
+submit_judgment is exactly the scenario this mode exists for, not a runaway loop to
+guard against as tightly as a participant's own turn budget."""
 
 # Verdict tokens (from a role's output_contract enum, e.g. skeptic-reviewer's
 # "ACCEPT | REVISE | REJECT") that must force the round loop to continue,
@@ -71,18 +98,16 @@ def _parse_judge_output(raw: str) -> dict[str, Any] | None:
     return data
 
 
-def judge_should_stop(
-    question: str,
-    transcript: str,
-    *,
-    round_num: int | None = None,
-    max_rounds: int | None = None,
-) -> dict[str, Any]:
+def _round_budget_note(round_num: int | None, max_rounds: int | None) -> str:
+    """Shared between judge_should_stop's prompt and run_interactive_judge's system
+    prompt -- both need the model to weigh how many rounds are actually left the same
+    way, so this stays as one piece of text rather than drifting apart across the two
+    implementations."""
     rounds_left = None
     if round_num is not None and max_rounds is not None:
         rounds_left = max_rounds - round_num
     if rounds_left is not None and rounds_left <= 0:
-        budget_note = (
+        return (
             f"\n=== Round budget ===\nThis was round {round_num} of {max_rounds} -- the "
             "meeting's round budget is exhausted; there is no further round available "
             "regardless of what you decide here. A stop=false verdict will NOT produce "
@@ -96,8 +121,8 @@ def judge_should_stop(
             "left to answer it. Set stop=true if the remaining gaps are now reduced to "
             "Planner-resolvable choices this way.\n"
         )
-    elif rounds_left is not None:
-        budget_note = (
+    if rounds_left is not None:
+        return (
             f"\n=== Round budget ===\nThis was round {round_num} of {max_rounds} -- "
             f"{rounds_left} round(s) remain after this one. Weigh that when deciding: an "
             "issue worth another full round of participant interaction is still "
@@ -105,8 +130,17 @@ def judge_should_stop(
             "specific enough that participants can close them quickly (name the exact "
             "test or reconciliation needed) rather than leaving them open-ended.\n"
         )
-    else:
-        budget_note = ""
+    return ""
+
+
+def judge_should_stop(
+    question: str,
+    transcript: str,
+    *,
+    round_num: int | None = None,
+    max_rounds: int | None = None,
+) -> dict[str, Any]:
+    budget_note = _round_budget_note(round_num, max_rounds)
 
     prompt = (
         "You are the gatekeeper for a planning discussion. Below is the task and every "
@@ -188,4 +222,124 @@ def judge_should_stop(
         "reasoning": str(parsed.get("reasoning") or ""),
         "unresolved_issues": parsed.get("unresolved_issues") or [],
         "per_participant_coverage": parsed.get("per_participant_coverage") or {},
+    }
+
+
+def run_interactive_judge(
+    question: str,
+    transcript: str,
+    meeting_id: str,
+    *,
+    round_num: int | None = None,
+    max_rounds: int | None = None,
+    progress: Any = None,
+    model: str = INTERACTIVE_JUDGE_MODEL,
+    provider: str = INTERACTIVE_JUDGE_PROVIDER,
+    reasoning_effort: str = INTERACTIVE_JUDGE_REASONING_EFFORT,
+    max_iterations: int = INTERACTIVE_JUDGE_MAX_ITERATIONS,
+    verbose: bool = True,
+) -> dict[str, Any]:
+    """MeetingConfig.human_checkin's judge. progress, if given, is threaded into the
+    agent's runtime as "judge_meeting_progress" -- judge_tools.py's ask_user_question
+    handler pauses it (a duck-typed .paused() context manager) around its blocking
+    input() prompt, the same way exploration_tools.py does; passed through untyped
+    (Any) here so this module doesn't need to import agent_meeting.tui just for a
+    type hint.
+
+    Returns the same stop/reasoning/unresolved_issues/per_participant_coverage shape
+    as judge_should_stop(), plus "qa": the full ask_user_question back-and-forth log,
+    in order, how ever many exchanges it took -- runner.py's _run_judge_step folds
+    each entry into the round's transcript as an authoritative human turn."""
+    budget_note = _round_budget_note(round_num, max_rounds)
+    system_prompt = (
+        "You are the gatekeeper for a multi-round technical planning discussion. "
+        "Below is the task and every round of participant contributions so far "
+        "(points, suggestions, and ideas only -- no Plan has been written yet).\n\n"
+        f"{budget_note}\n"
+        "Your job is NOT to decide whether a Planner could write some plan now. Your "
+        "job is to decide whether another participant discussion round would still "
+        "create meaningful value before the Planner writes the final Plan.\n\n"
+        "Set stop=false when another round is likely to resolve, test, or sharpen a "
+        "material issue through participant interaction: unresolved disagreement "
+        "between participants, an objection that has not been answered by the "
+        "relevant owner, conflicting empirical claims, a proposed pipeline step whose "
+        "interface or acceptance criteria remain unclear, or a failure mode that "
+        "needs a concrete mitigation rather than being handed to the Planner as a "
+        "TODO.\n\n"
+        "Set stop=true only when further discussion would mostly repeat known "
+        "positions or add minor implementation polish, and the remaining choices are "
+        "clearly Planner synthesis decisions rather than open discussion gaps.\n\n"
+        "Pay particular attention to any participant who raised an explicit "
+        "unresolved objection, dissent, or a 'REVISE'/'REJECT' verdict of their own "
+        "that the same participant hasn't since withdrawn -- that is a blocking "
+        "discussion gap, not merely a Planner decision issue, and belongs in "
+        "unresolved_issues.\n\n"
+        "Also watch for a specific quantitative claim or threshold that multiple "
+        "participants have repeated as settled fact across rounds without anyone "
+        "ever actually running a test that measures it -- list it in "
+        "unresolved_issues (phrased as 'X has been assumed but never measured') and "
+        "let it count toward stop=false, even though no participant currently "
+        "disagrees with it.\n\n"
+        "You have two tools. ask_user_question talks directly to the human "
+        "stakeholder who commissioned this task -- not a meeting participant, a real "
+        "person who has not read the discussion below. You may call it any number of "
+        "times, back and forth: if their answer shows they didn't understand your "
+        "question, or is itself a question, clarify and ask again rather than "
+        "guessing at what they meant -- keep going until you have a real, usable "
+        "answer. Before you finish, ask about this round's single most consequential "
+        "open point -- a direction choice between two approaches participants both "
+        "defended, a priority tradeoff no one in the discussion has the authority to "
+        "settle, a scope boundary the discussion exposed as ambiguous, or a risk "
+        "flagged without a clear owner -- phrased so a non-expert stakeholder can "
+        "answer it directly, with 2-4 concrete candidate answers. Skip asking only "
+        "when you're genuinely confident nothing this round needs their input. "
+        "submit_judgment ends your turn with your final verdict -- call it once "
+        "you've asked everything you need to (including zero questions if none were "
+        "warranted).\n\n"
+        f"=== Task ===\n{question}\n\n"
+        f"=== Discussion So Far ===\n{transcript}"
+    )
+    user_message = "Review this round and decide -- ask the human anything you need to before submit_judgment."
+
+    if verbose:
+        from .trajectory import log
+        log("judge", f"round {round_num}: reviewing -- may ask you a question...")
+
+    agent = GeneralAgent(
+        model=model,
+        provider=provider,
+        reasoning_effort=reasoning_effort,
+        max_iterations=max_iterations,
+        context_threshold_tokens=COMPACT_TOKEN_THRESHOLD,
+        auto_compact=AUTO_COMPACT,
+        self_review=False,
+        registry=build_judge_registry(),
+        sub_agent=True,
+        agent_role="judge",
+        workspace_root=participant_workspace_dir(meeting_id, "Judge"),
+        extra_runtime={"judge_meeting_progress": progress},
+    )
+    agent.run(user_message, system_prompt=system_prompt)
+    runtime = getattr(agent, "_runtime", {})
+    judgment: dict[str, Any] | None = runtime.get("judgment")
+    qa: list[dict[str, Any]] = runtime.get("judge_qa") or []
+
+    if judgment is None:
+        # Fail open (continue), same reasoning as judge_should_stop's parse-failure
+        # path -- the agent ran out of iterations or otherwise never called
+        # submit_judgment; burning one extra round is cheap, losing the rest of a
+        # planning meeting to a judge that never decided is not.
+        return {
+            "stop": False,
+            "reasoning": "Interactive judge finished without calling submit_judgment; defaulting to continue.",
+            "unresolved_issues": ["judge_output_parse_failure"],
+            "per_participant_coverage": {},
+            "qa": qa,
+        }
+    return {
+        "stop": bool(judgment.get("stop")),
+        "reasoning": str(judgment.get("reasoning") or ""),
+        "unresolved_issues": judgment.get("unresolved_issues") or [],
+        "per_participant_coverage": judgment.get("per_participant_coverage") or {},
+        "qa": qa,
     }

@@ -54,7 +54,7 @@ from ._context_limits import AUTO_COMPACT, COMPACT_TOKEN_THRESHOLD
 from .single_call_synthesis import stream_synthesize
 from .aggregate import aggregate_responses
 from .config import MeetingConfig, ParticipantConfig, PlannerConfig
-from .judge import blocking_verdicts_this_round, judge_should_stop
+from .judge import blocking_verdicts_this_round, judge_should_stop, run_interactive_judge
 from .role_state import clear_role_workspaces, collect_role_refs, restore_role_states, snapshot_role_states
 from .storage import (
     load_meeting,
@@ -377,7 +377,6 @@ def _execute_turn(
     extra_system_prompt: str | None = None,
     context_meta: dict[str, Any] | None = None,
     progress: MeetingProgress | None = None,
-    max_rounds: int | None = None,
 ) -> dict[str, Any]:
     """Shared low-level turn executor: role resolution -> GeneralAgent construction ->
     run -> record -> cache. `round_num` here is only a cache-key/log-label -- for
@@ -386,18 +385,18 @@ def _execute_turn(
     session_path) -- it's how callers that build the user_message themselves (e.g.
     _run_planning_participant_turn's context-budget trimming and overflow retries)
     surface what happened to this turn's context alongside its full saved session.
-    `progress`/`max_rounds` are optional -- only planning_rounds' live TUI passes them;
-    every other caller leaves them None and TrajectoryUI simply skips the live-display
-    updates, exactly as before this was added."""
+    `progress` is optional -- only planning_rounds' live TUI passes it; every other
+    caller leaves it None and TrajectoryUI simply skips the live-display updates,
+    exactly as before this was added."""
     cached = load_turn_cache(meeting_id, round_num, participant.name)
     if cached is not None:
         if verbose:
             log(participant.name, f"turn {round_num}: reusing cached turn (resume)")
         return cached
 
-    recorder = TurnRecorder(agent=participant.name, round_num=round_num, decided_by=decided_by)
-    ui = TrajectoryUI(recorder, verbose=verbose, meeting_id=meeting_id, progress=progress, max_rounds=max_rounds)
-
+    # Resolved before TrajectoryUI construction (rather than after, where this block
+    # used to live) so its TUI row can show this participant's real max_iterations
+    # from the start instead of a placeholder.
     role: roles_api.RoleDefinition | None = None
     extra_runtime: dict[str, Any] = {}
     if participant.role_ref:
@@ -415,6 +414,11 @@ def _execute_turn(
         provider = participant.provider
         reasoning_effort = participant.reasoning_effort
         max_iterations = participant.max_iterations
+
+    recorder = TurnRecorder(agent=participant.name, round_num=round_num, decided_by=decided_by)
+    ui = TrajectoryUI(
+        recorder, verbose=verbose, meeting_id=meeting_id, progress=progress, max_iterations=max_iterations,
+    )
 
     if participant.meeting_brief:
         system_prompt += (
@@ -989,7 +993,7 @@ def _run_planning_participant_turn(
                 decided_by="script", round_aware=round_num > 1,
                 extra_system_prompt=participant_addendum,
                 context_meta=context_meta,
-                progress=progress, max_rounds=max_rounds,
+                progress=progress,
             )
         except Exception as exc:
             # round 1 has no transcript to trim yet -- constrained_question itself is
@@ -1057,20 +1061,41 @@ def _run_planning_round(
 
 def _run_judge_step(
     config: MeetingConfig,
+    meeting_id: str,
     round_num: int,
     all_rounds_turns: list[list[dict[str, Any]]],
     max_rounds: int,
+    round_step: dict[str, Any],
+    progress: MeetingProgress | None,
 ) -> tuple[bool, dict[str, Any]]:
+    """round_step is the just-finished round's participant step -- passed in (not
+    just all_rounds_turns) so that when config.human_checkin is True, the judge's own
+    ask_user_question back-and-forth (however many exchanges it took) can be folded
+    into round_step["turns"] as one "Human (AUTHORITATIVE)" turn per exchange. That
+    list is the *same object* all_rounds_turns[-1] already references (see the
+    caller), so _round_transcript renders every exchange to later rounds' participants
+    exactly like any other round contribution -- just explicitly marked as
+    authoritative human input, not a position open for a participant to revise.
+
+    Folding into round_step["turns"] instead of appending a new top-level step is
+    deliberate: it keeps the checkpoint's (participant_step, judge_step) pairing
+    exactly 2 steps per round, which run_meeting()'s --resume math
+    (`len(existing_steps) // 2`) depends on -- see that function's docstring. A third
+    step per round would silently break it, however many human exchanges happened."""
     if config.verbose:
         log("meeting", f"round {round_num}: all participant(s) done, asking judge whether to stop...")
 
+    question = _question_with_planning_constraints(config.question)
+    transcript = _round_transcript(all_rounds_turns)
     judge_start = now()
-    decision = judge_should_stop(
-        _question_with_planning_constraints(config.question),
-        _round_transcript(all_rounds_turns),
-        round_num=round_num,
-        max_rounds=max_rounds,
-    )
+    if config.human_checkin:
+        decision = run_interactive_judge(
+            question, transcript, meeting_id,
+            round_num=round_num, max_rounds=max_rounds, progress=progress,
+            verbose=config.verbose,
+        )
+    else:
+        decision = judge_should_stop(question, transcript, round_num=round_num, max_rounds=max_rounds)
     judge_end = now()
 
     blocking = blocking_verdicts_this_round(all_rounds_turns[-1]) if all_rounds_turns else {}
@@ -1104,8 +1129,8 @@ def _run_judge_step(
                 "agent": "__judge__",
                 "decided_by": "judge",
                 "round": round_num,
-                "input": decision["prompt"],
-                "output": decision["output"],
+                "input": decision.get("prompt", ""),
+                "output": decision.get("output", ""),
                 "stop": stop,
                 "judge_stop_recommendation": bool(decision["stop"]),
                 "override_reason": override_reason,
@@ -1118,6 +1143,30 @@ def _run_judge_step(
             }
         ],
     }
+
+    for i, qa in enumerate(decision.get("qa", [])):
+        round_step["turns"].append(
+            {
+                "turn_id": f"trn_human_{round_num}_{i}",
+                "agent": "Human (AUTHORITATIVE)",
+                "decided_by": "human_checkin",
+                "round": round_num,
+                "question": qa["question"],
+                "question_options": qa.get("options", []),
+                "answer": qa["answer"],
+                "authoritative": True,
+                "output": (
+                    "[AUTHORITATIVE HUMAN ANSWER -- this is the task owner's own "
+                    "answer, not a participant's opinion; treat it as a hard "
+                    f"constraint, not a position to argue with]\nQ: {qa['question']}\n"
+                    f"A: {qa['answer']}"
+                ),
+                "start_time": iso(judge_end),
+                "end_time": iso(judge_end),
+                "duration_ms": 0,
+            }
+        )
+
     return stop, step
 
 
@@ -1419,7 +1468,9 @@ def _run_planning_rounds(
                 all_rounds_turns.append(round_step["turns"])
                 all_steps.append(round_step)
 
-                should_stop, judge_step = _run_judge_step(config, round_num, all_rounds_turns, max_rounds)
+                should_stop, judge_step = _run_judge_step(
+                    config, meeting_id, round_num, all_rounds_turns, max_rounds, round_step, progress,
+                )
                 all_steps.append(judge_step)
 
                 for i, step in enumerate(all_steps):

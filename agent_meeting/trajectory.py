@@ -168,18 +168,22 @@ class TrajectoryUI:
         verbose: bool = True,
         meeting_id: str | None = None,
         progress: MeetingProgress | None = None,
-        max_rounds: int | None = None,
+        max_iterations: int | None = None,
     ) -> None:
         self.recorder = recorder
         self.iteration = 0
         self.verbose = verbose
         self.meeting_id = meeting_id
         self.progress = progress
-        self.max_rounds = max_rounds if max_rounds is not None else recorder.round
+        # The TUI row shows this participant's own GeneralAgent.run() loop progress
+        # (iteration/max_iterations), not the meeting round -- the overall bar above
+        # the per-agent table already shows the round.
+        self.max_iterations = max_iterations if max_iterations is not None else 0
         self._open_tool: tuple[str, dict[str, Any], datetime] | None = None
         if self.progress is not None:
             self.progress.update_agent(
-                self.recorder.agent, round_num=self.recorder.round, phase="idle", detail="starting turn…",
+                self.recorder.agent, iteration=0, max_iterations=self.max_iterations,
+                phase="idle", detail="starting turn…",
             )
 
     def _log(self, message: str) -> None:
@@ -201,8 +205,8 @@ class TrajectoryUI:
         self._log(f"iter {self.iteration}: tool_call {name}({args_preview})")
         if self.progress is not None:
             self.progress.update_agent(
-                self.recorder.agent, round_num=self.recorder.round, phase="tool_call",
-                detail=f"{name}({args_preview})",
+                self.recorder.agent, iteration=self.iteration, max_iterations=self.max_iterations,
+                phase="tool_call", detail=f"{name}({args_preview})",
             )
 
     def tool_done(self, name: str, result: str) -> None:
@@ -264,8 +268,8 @@ class TrajectoryUI:
         self._log(f"finished after {iterations} iteration(s)")
         if self.progress is not None:
             self.progress.update_agent(
-                self.recorder.agent, round_num=self.recorder.round, phase="done",
-                detail=f"finished after {iterations} iteration(s)",
+                self.recorder.agent, iteration=self.iteration, max_iterations=self.max_iterations,
+                phase="done", detail=f"finished after {iterations} iteration(s)",
             )
 
     def saved(self, path: str) -> None:
@@ -334,8 +338,8 @@ class LoggingLLMClient:
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:
         if self._ui.progress is not None:
             self._ui.progress.update_agent(
-                self._recorder.agent, round_num=self._recorder.round, phase="waiting_llm",
-                detail=_tui_preview(_last_message_text(messages)),
+                self._recorder.agent, iteration=self._ui.iteration, max_iterations=self._ui.max_iterations,
+                phase="waiting_llm", detail=_tui_preview(_last_message_text(messages)),
             )
         start = _now()
         response = self._inner.chat(messages, tools)

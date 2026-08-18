@@ -2,9 +2,10 @@
 
 Renders, while stdout is a real terminal: one overall progress bar for the
 current round, and one row per participant below it showing that participant's
-own round/max-rounds plus a single live status line -- either the tool call
-it's currently waiting on, or a preview of what it just sent the model while
-waiting for a response.
+own agent-loop progress -- iteration/max_iterations of its GeneralAgent.run()
+call, not the meeting round (the bar above already shows that) -- plus a single
+live status line: either the tool call it's currently waiting on, or a preview
+of what it just sent the model while waiting for a response.
 
 Falls back to a no-op when stdout isn't a real terminal (piped output, log
 capture, CI) -- rich's Live display assumes a real terminal to redraw in
@@ -16,9 +17,10 @@ recorded by TurnRecorder/TrajectoryUI.
 """
 from __future__ import annotations
 
+import contextlib
 import threading
 from dataclasses import dataclass
-from typing import Literal
+from typing import Iterator, Literal
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -48,8 +50,8 @@ def preview(text: str, limit: int = _PREVIEW_LEN) -> str:
 @dataclass
 class _AgentRow:
     name: str
-    round_num: int = 0
-    max_rounds: int = 1
+    iteration: int = 0
+    max_iterations: int = 1
     phase: Phase = "idle"
     detail: str = ""
 
@@ -68,9 +70,11 @@ class MeetingProgress:
         self.max_rounds = max_rounds
         self.round_num = 0
         self._lock = threading.Lock()
-        self._rows: dict[str, _AgentRow] = {
-            name: _AgentRow(name=name, max_rounds=max_rounds) for name in agent_names
-        }
+        # max_iterations is per-participant and not known until its GeneralAgent is
+        # actually constructed (role fallback in runner.py's _execute_turn), so this
+        # placeholder is corrected by the first update_agent() call for each name --
+        # a row is only visible once its turn has actually started anyway.
+        self._rows: dict[str, _AgentRow] = {name: _AgentRow(name=name) for name in agent_names}
         self._console = Console()
         self._live: Live | None = None
         self.enabled = self._console.is_terminal
@@ -88,15 +92,37 @@ class MeetingProgress:
             self._live.__exit__(*exc_info)
             self._live = None
 
+    @contextlib.contextmanager
+    def paused(self) -> Iterator[None]:
+        """Suspend rich's Live refresh for the duration of a blocking terminal prompt
+        (input()) -- e.g. MeetingConfig.human_checkin's judge question. Left running,
+        Live's own redraw (4/sec, in place via cursor movement) would land on top of
+        whatever the caller prints/reads. rich's documented pattern for this is
+        stop() before / start() after, not a bare context suspension -- start(refresh=
+        True) forces an immediate redraw from the current state so the display
+        doesn't sit stale until the next natural tick. No-op when never entered
+        (self._live is None, e.g. non-terminal stdout)."""
+        if self._live is None:
+            yield
+            return
+        self._live.stop()
+        try:
+            yield
+        finally:
+            self._live.start(refresh=True)
+
     def set_round(self, round_num: int) -> None:
         with self._lock:
             self.round_num = round_num
         self._refresh()
 
-    def update_agent(self, name: str, *, round_num: int, phase: Phase, detail: str = "") -> None:
+    def update_agent(
+        self, name: str, *, iteration: int, max_iterations: int, phase: Phase, detail: str = ""
+    ) -> None:
         with self._lock:
-            row = self._rows.setdefault(name, _AgentRow(name=name, max_rounds=self.max_rounds))
-            row.round_num = round_num
+            row = self._rows.setdefault(name, _AgentRow(name=name))
+            row.iteration = iteration
+            row.max_iterations = max_iterations
             row.phase = phase
             row.detail = detail
         self._refresh()
@@ -120,10 +146,10 @@ class MeetingProgress:
         with self._lock:
             rows = sorted(self._rows.values(), key=lambda r: r.name)
             for row in rows:
-                round_label = f"[{row.round_num}/{row.max_rounds}]"
+                iter_label = f"[{row.iteration}/{row.max_iterations}]"
                 table.add_row(
                     f"[bold]{row.name}[/bold]",
-                    f"{round_label} {_PHASE_LABEL[row.phase]}",
+                    f"{iter_label} {_PHASE_LABEL[row.phase]}",
                     preview(row.detail),
                 )
         return Group(overall, table)

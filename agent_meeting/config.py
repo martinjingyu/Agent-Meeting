@@ -134,6 +134,20 @@ class MeetingConfig:
     system addendum that limits participants to ideas/suggestions. Examples can use
     this to allow candidate architecture sketches or technical data flows while still
     reserving the adopted final Plan for the dedicated Planner."""
+    human_checkin: bool = False
+    """mode="planning_rounds" only: swaps the judge from judge.py's default single
+    deterministic LLM call (judge_should_stop) to judge.py's run_interactive_judge --
+    a small GeneralAgent tool loop with exactly two tools (ask_user_question,
+    submit_judgment; see judge_tools.py). The judge can have a genuine multi-turn
+    conversation with the human stakeholder -- ask a question via a Claude-Code-style
+    TUI (agent_meeting.interactive.ask_choice), get an answer, ask a follow-up if the
+    answer shows they didn't understand, repeat -- before finishing with its verdict.
+    Every exchange is folded into that round's transcript as its own explicit,
+    clearly-marked authoritative human turn, so every later round's participants (and
+    the Planner) see it exactly like any other round contribution -- just not one
+    they can revise. False (the default) leaves every existing meeting's behavior
+    unchanged: the judge is the original single completion, never blocks on
+    terminal input."""
     persist_role_state: bool = False
     """Role-backed participants/moderator normally read/write roles/<role_ref>/
     {memory.md,workspace/} -- state that's shared across EVERY meeting that ever
