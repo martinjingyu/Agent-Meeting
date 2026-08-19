@@ -377,6 +377,7 @@ def _execute_turn(
     extra_system_prompt: str | None = None,
     context_meta: dict[str, Any] | None = None,
     progress: MeetingProgress | None = None,
+    allow_resume: bool = True,
 ) -> dict[str, Any]:
     """Shared low-level turn executor: role resolution -> GeneralAgent construction ->
     run -> record -> cache. `round_num` here is only a cache-key/log-label -- for
@@ -387,11 +388,35 @@ def _execute_turn(
     surface what happened to this turn's context alongside its full saved session.
     `progress` is optional -- only planning_rounds' live TUI passes it; every other
     caller leaves it None and TrajectoryUI simply skips the live-display updates,
-    exactly as before this was added."""
+    exactly as before this was added. `allow_resume` gates whether a partial session
+    file left by a killed prior process is read back as history (see below); callers
+    that re-invoke this for the same (meeting_id, round_num, participant) within one
+    still-running process -- e.g. the context-overflow retry loop below -- must pass
+    False for every retry after the first, since that leftover file is this same
+    process's own just-failed attempt, not a genuinely interrupted run, and replaying
+    it would just reproduce the same overflow."""
     cached = load_turn_cache(meeting_id, round_num, participant.name)
     if cached is not None:
         if verbose:
             log(participant.name, f"turn {round_num}: reusing cached turn (resume)")
+        if progress is not None:
+            # A cache hit means this turn already fully completed in an earlier run
+            # (see save_turn_cache below -- it's only ever written once a turn
+            # finishes), so the row should read "done", not sit at the "idle"
+            # dataclass default it would otherwise never leave: this early return
+            # used to skip TrajectoryUI/update_agent entirely, which is why a resumed
+            # meeting showed every already-finished participant as idle.
+            cached_iterations = max(
+                (e.get("iteration", 0) for e in cached.get("events") or []), default=0,
+            )
+            max_iterations = (
+                participant.max_iterations if participant.max_iterations != 8
+                else (roles_api.load_role(participant.role_ref).max_iterations if participant.role_ref else 8)
+            )
+            progress.update_agent(
+                participant.name, iteration=cached_iterations, max_iterations=max_iterations,
+                phase="done", detail="resumed from cache",
+            )
         return cached
 
     # Resolved before TrajectoryUI construction (rather than after, where this block
@@ -457,6 +482,34 @@ def _execute_turn(
     recorder.available_tools = sorted(registry.names)
 
     session_path = sessions_dir(meeting_id) / f"{participant.name}_r{round_num}.json"
+    # GeneralAgent atomically rewrites session_path with the full, current `messages`
+    # array after essentially every step (assistant response, each tool result) --
+    # see research_agent's _write_live_cache(). That happens as a side effect of
+    # passing session_path= below regardless of whether this turn ever finishes, so a
+    # process killed mid-turn (crash, Ctrl-C, machine restart) still leaves this file
+    # holding the exact partial trajectory. If it's here now, allow_resume is true,
+    # and it holds more than just the bare first message, treat it as that leftover
+    # and hand it back as history instead of starting the turn over from nothing --
+    # any tool_calls message left dangling without its results (killed mid-tool-call)
+    # is patched by _repair_tool_sequences() inside agent.run() into a synthetic
+    # "missing result" entry, which the model reads as "that call didn't finish" and
+    # naturally retries; per-task-decision, tool calls in this environment are treated
+    # as safe to repeat, so no finer-grained recovery than that is attempted.
+    resume_history: list[dict[str, Any]] | None = None
+    if allow_resume and session_path.exists():
+        try:
+            raw = json.loads(session_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raw = None
+        if isinstance(raw, list) and len(raw) > 1:
+            resume_history = raw
+            if verbose:
+                log(
+                    participant.name,
+                    f"turn {round_num}: resuming from a partial session "
+                    f"({len(resume_history)} prior message(s))",
+                )
+
     # Role-backed participants get a private, persistent workspace (roles/<name>/
     # workspace/, alongside memory.md -- carries across meetings). Ad-hoc participants
     # get a private but ephemeral one, scoped to this meeting only. Either way, no two
@@ -485,7 +538,21 @@ def _execute_turn(
     agent.llm = LoggingLLMClient(agent.llm, recorder, ui)
 
     recorder.start_time = now()
-    result = agent.run(user_message, system_prompt=system_prompt)
+    if resume_history is not None:
+        result = agent.run(
+            "You were interrupted mid-turn (process restart, crash, or manual stop) "
+            "and are now resuming. The conversation above is your own actual prior "
+            "progress in this same turn, not a new message from anyone -- do not "
+            "restart, re-introduce yourself, or repeat work already done above. If "
+            "the last assistant message above requested tool calls with no result "
+            "shown for one, that call did not complete; call it again -- tool calls "
+            "in this environment are safe to repeat. Otherwise, continue directly "
+            "from where you left off.",
+            history=resume_history,
+            system_prompt=system_prompt,
+        )
+    else:
+        result = agent.run(user_message, system_prompt=system_prompt)
     recorder.end_time = now()
 
     recorder.output = result.get("final") or ""
@@ -994,6 +1061,13 @@ def _run_planning_participant_turn(
                 extra_system_prompt=participant_addendum,
                 context_meta=context_meta,
                 progress=progress,
+                # Only the first attempt may resume from a leftover session file --
+                # see _execute_turn's docstring. attempt > 0 means this process itself
+                # just failed with a context-overflow error on this same round_num,
+                # so any file on disk right now is that failed attempt's own partial
+                # trajectory (built from the too-large round_message that caused the
+                # overflow in the first place), not a genuinely interrupted run.
+                allow_resume=(attempt == 0),
             )
         except Exception as exc:
             # round 1 has no transcript to trim yet -- constrained_question itself is
