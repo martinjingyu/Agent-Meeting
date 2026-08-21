@@ -57,6 +57,7 @@ from .config import MeetingConfig, ParticipantConfig, PlannerConfig
 from .judge import blocking_verdicts_this_round, judge_should_stop, run_interactive_judge
 from .role_state import clear_role_workspaces, collect_role_refs, restore_role_states, snapshot_role_states
 from .storage import (
+    human_qa_path,
     load_meeting,
     load_turn_cache,
     meeting_exists,
@@ -1144,12 +1145,13 @@ def _run_judge_step(
 ) -> tuple[bool, dict[str, Any]]:
     """round_step is the just-finished round's participant step -- passed in (not
     just all_rounds_turns) so that when config.human_checkin is True, the judge's own
-    ask_user_question back-and-forth (however many exchanges it took) can be folded
-    into round_step["turns"] as one "Human (AUTHORITATIVE)" turn per exchange. That
-    list is the *same object* all_rounds_turns[-1] already references (see the
-    caller), so _round_transcript renders every exchange to later rounds' participants
-    exactly like any other round contribution -- just explicitly marked as
-    authoritative human input, not a position open for a participant to revise.
+    ask_user_questions batches (however many batches, however many questions per
+    batch it took) can be folded into round_step["turns"] as one "Human
+    (AUTHORITATIVE)" turn per individual question. That list is the *same object*
+    all_rounds_turns[-1] already references (see the caller), so _round_transcript
+    renders every question+answer to later rounds' participants exactly like any
+    other round contribution -- just explicitly marked as authoritative human input,
+    not a position open for a participant to revise.
 
     Folding into round_step["turns"] instead of appending a new top-level step is
     deliberate: it keeps the checkpoint's (participant_step, judge_step) pairing
@@ -1218,7 +1220,8 @@ def _run_judge_step(
         ],
     }
 
-    for i, qa in enumerate(decision.get("qa", [])):
+    round_qa = decision.get("qa", [])
+    for i, qa in enumerate(round_qa):
         round_step["turns"].append(
             {
                 "turn_id": f"trn_human_{round_num}_{i}",
@@ -1240,8 +1243,37 @@ def _run_judge_step(
                 "duration_ms": 0,
             }
         )
+    if round_qa:
+        _append_human_qa(meeting_id, round_num, round_qa, judge_end)
 
     return stop, step
+
+
+def _append_human_qa(
+    meeting_id: str, round_num: int, round_qa: list[dict[str, Any]], when: datetime,
+) -> None:
+    """Appends this round's human_checkin exchanges to human_qa_path(meeting_id) --
+    one consolidated file for the whole meeting, so auditing what the human was asked
+    and answered doesn't require grepping every participant's round transcript (see
+    human_qa_path's docstring). Called once per round from _run_judge_step, in the
+    main thread after every participant in that round has already finished (never
+    concurrent with another writer), so a plain read-modify-write is safe -- no lock
+    needed, unlike TrajectoryUI.compact()'s compaction log, which is appended to from
+    several participants' worker threads at once."""
+    path = human_qa_path(meeting_id)
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    except (json.JSONDecodeError, OSError):
+        existing = []
+    for qa in round_qa:
+        existing.append({
+            "round": round_num,
+            "question": qa["question"],
+            "options": qa.get("options", []),
+            "answer": qa["answer"],
+            "time": iso(when),
+        })
+    path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _default_planner_system_prompt(planner: PlannerConfig) -> str:

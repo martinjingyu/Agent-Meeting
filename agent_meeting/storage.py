@@ -23,6 +23,25 @@ def sessions_dir(meeting_id: str) -> Path:
     return path
 
 
+def human_qa_path(meeting_id: str) -> Path:
+    """One consolidated record of every MeetingConfig.human_checkin exchange across
+    the whole meeting, across every round -- see _run_judge_step in runner.py, the
+    only writer. Without this, the only record of what the human was actually asked
+    and answered is duplicated inside every participant's own round transcript (each
+    "Human (AUTHORITATIVE)" turn folded into round_step["turns"] so later rounds see
+    it as part of the discussion) -- correct for shaping the discussion, but it means
+    auditing "what did the human actually decide, and when" requires grepping every
+    participant's session file instead of reading one place. Named as a sibling of
+    meeting_path() (RUNS_DIR / f"{id}.json"), matching the example scripts' own
+    "<meeting_id>_exploration_qa.json" convention for the pre-roster exploration
+    phase's Q&A -- that one is script-managed (the exploration phase itself is opt-in,
+    wired up by whichever example script calls run_exploration_phase), whereas this
+    one is framework-managed since human_checkin is a MeetingConfig flag any script
+    can set."""
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    return RUNS_DIR / f"{meeting_id}_human_qa.json"
+
+
 def compaction_log_path(meeting_id: str) -> Path:
     """One line appended per compaction event, across every agent in this meeting --
     see TrajectoryUI.compact(). Meant to stay empty in normal operation now that

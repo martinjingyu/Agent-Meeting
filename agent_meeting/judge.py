@@ -11,14 +11,14 @@ Two implementations, chosen by MeetingConfig.human_checkin:
   caller tunes per meeting the way aggregation_model/provider are.
 
 - True: run_interactive_judge(), a GeneralAgent tool loop with exactly two tools
-  (judge_tools.build_judge_registry: ask_user_question, submit_judgment) instead of
+  (judge_tools.build_judge_registry: ask_user_questions, submit_judgment) instead of
   one fixed completion. This lets the judge have a genuine multi-turn conversation
-  with the human stakeholder -- ask a question, get an answer, ask a follow-up if
-  the answer shows they didn't understand, repeat for as many exchanges as it takes
-  -- before finishing with its stop/continue verdict, rather than a single Q+A
-  bolted on after a verdict already reached without human input. See runner.py's
-  _run_judge_step for how the two are dispatched and how run_interactive_judge's
-  qa log gets folded into the round's transcript.
+  with the human stakeholder -- ask everything material in one batched call, get all
+  the answers back together, ask a follow-up batch if those answers raise one, repeat
+  for as many exchanges as it takes -- before finishing with its stop/continue
+  verdict, rather than a single Q+A bolted on after a verdict already reached without
+  human input. See runner.py's _run_judge_step for how the two are dispatched and how
+  run_interactive_judge's qa log gets folded into the round's transcript.
 
 Both must emit their reasoning (open issues weighed, per-participant coverage)
 before the verdict, not a bare "1"/"0". Two reasons: (1) auditability -- a bare
@@ -52,12 +52,15 @@ JUDGE_REASONING_EFFORT = "medium"
 INTERACTIVE_JUDGE_MODEL = "gpt-5.5"
 INTERACTIVE_JUDGE_PROVIDER = "codex"
 INTERACTIVE_JUDGE_REASONING_EFFORT = "medium"
-INTERACTIVE_JUDGE_MAX_ITERATIONS = 12
-"""Well above what a normal exchange needs (each back-and-forth is 2 iterations: one
-ask_user_question call, one model turn reading the answer) -- generous rather than
-tight, since a genuinely confused human working through 3-4 clarifying rounds before
-submit_judgment is exactly the scenario this mode exists for, not a runaway loop to
-guard against as tightly as a participant's own turn budget."""
+INTERACTIVE_JUDGE_MAX_ITERATIONS = 20
+"""Each back-and-forth is 2 iterations regardless of how many questions are in that
+call's batch: one ask_user_questions call (however many questions it bundles), one
+model turn reading all the answers back together. So the common case -- one batch
+covering everything the round raised, then a second, final batch of just the
+stop/continue confirmation -- is only 4 iterations. The generous headroom above that
+is for a genuinely confused human needing a clarifying follow-up batch, or the model
+splitting into more batches than strictly necessary -- not a runaway loop to guard
+against as tightly as a participant's own turn budget."""
 
 # Verdict tokens (from a role's output_contract enum, e.g. skeptic-reviewer's
 # "ACCEPT | REVISE | REJECT") that must force the round loop to continue,
@@ -240,16 +243,17 @@ def run_interactive_judge(
     verbose: bool = True,
 ) -> dict[str, Any]:
     """MeetingConfig.human_checkin's judge. progress, if given, is threaded into the
-    agent's runtime as "judge_meeting_progress" -- judge_tools.py's ask_user_question
+    agent's runtime as "judge_meeting_progress" -- judge_tools.py's ask_user_questions
     handler pauses it (a duck-typed .paused() context manager) around its blocking
-    input() prompt, the same way exploration_tools.py does; passed through untyped
+    input() prompts, the same way exploration_tools.py does; passed through untyped
     (Any) here so this module doesn't need to import agent_meeting.tui just for a
     type hint.
 
     Returns the same stop/reasoning/unresolved_issues/per_participant_coverage shape
-    as judge_should_stop(), plus "qa": the full ask_user_question back-and-forth log,
-    in order, how ever many exchanges it took -- runner.py's _run_judge_step folds
-    each entry into the round's transcript as an authoritative human turn."""
+    as judge_should_stop(), plus "qa": the full ask_user_questions back-and-forth log,
+    one entry per individual question across every batch, in order, how ever many
+    batches it took -- runner.py's _run_judge_step folds each entry into the round's
+    transcript as an authoritative human turn."""
     budget_note = _round_budget_note(round_num, max_rounds)
     system_prompt = (
         "You are the gatekeeper for a multi-round technical planning discussion. "
@@ -280,22 +284,49 @@ def run_interactive_judge(
         "unresolved_issues (phrased as 'X has been assumed but never measured') and "
         "let it count toward stop=false, even though no participant currently "
         "disagrees with it.\n\n"
-        "You have two tools. ask_user_question talks directly to the human "
+        "You have two tools. ask_user_questions talks directly to the human "
         "stakeholder who commissioned this task -- not a meeting participant, a real "
-        "person who has not read the discussion below. You may call it any number of "
-        "times, back and forth: if their answer shows they didn't understand your "
-        "question, or is itself a question, clarify and ask again rather than "
-        "guessing at what they meant -- keep going until you have a real, usable "
-        "answer. Before you finish, ask about this round's single most consequential "
-        "open point -- a direction choice between two approaches participants both "
-        "defended, a priority tradeoff no one in the discussion has the authority to "
-        "settle, a scope boundary the discussion exposed as ambiguous, or a risk "
-        "flagged without a clear owner -- phrased so a non-expert stakeholder can "
-        "answer it directly, with 2-4 concrete candidate answers. Skip asking only "
-        "when you're genuinely confident nothing this round needs their input. "
-        "submit_judgment ends your turn with your final verdict -- call it once "
-        "you've asked everything you need to (including zero questions if none were "
-        "warranted).\n\n"
+        "person who has not read the discussion below. It takes a batch: you give it "
+        "every question you currently have and get every answer back together in one "
+        "response, so the human answers everything in one sitting instead of a slow "
+        "one-question-at-a-time drip. You may still call it again after reading a "
+        "batch's answers -- e.g. one of the answers raises a genuine new question, or "
+        "an answer shows they didn't understand what you asked and that item needs "
+        "re-asking in a clearer form -- keep going for as many batches as it "
+        "genuinely takes.\n\n"
+        "In your first call, ask about every genuinely material open point this "
+        "round raised, all in that one batch -- do not artificially limit yourself "
+        "to one question, and do not space questions out one per call when they were "
+        "all already known at the start. A direction choice between two approaches "
+        "participants both defended, a priority tradeoff no one in the discussion "
+        "has the authority to settle, a scope boundary the discussion exposed as "
+        "ambiguous, a risk flagged without a clear owner -- ask about all of them "
+        "together. Skip a point only when you're genuinely confident it doesn't need "
+        "human input (participants already settled it, or it's a Planner synthesis "
+        "detail rather than a real direction choice), never to keep the batch short. "
+        "Phrase each question so a non-expert stakeholder can answer it directly, "
+        "with 2-4 concrete candidate answers.\n\n"
+        "Once you have those answers, you may still owe the human a further "
+        "question: an answer can itself expose a new choice, tension, or ambiguity "
+        "that wasn't visible before they answered. If so, ask about it in another "
+        "ask_user_questions call before moving on -- do not treat the first batch as "
+        "automatically the only one.\n\n"
+        "Before you call submit_judgment, you MUST ask one more, final confirming "
+        "question (its own item in your last batch, alongside any other last-minute "
+        "questions if you have them): state in one or two sentences which way you're "
+        "leaning (stop the discussion and hand off to the Planner, or run another "
+        "round) and why, then ask whether that's OK to proceed with. Give concrete "
+        "options covering both agreement and the plausible alternatives -- e.g. "
+        "leaning stop=true: 'Yes, stop here and let the Planner write the Plan now' "
+        "/ 'No, run one more round first' / 'Stop, but make sure the Planner "
+        "resolves <specific issue> a certain way'; leaning stop=false: 'Yes, run "
+        "another round' / 'No, stop now -- the remaining points are fine as Planner "
+        "decisions' / 'Run another round, but focus it specifically on <issue>'. "
+        "This is a real decision, not a formality: if the human's answer contradicts "
+        "your lean, submit_judgment's stop value and reasoning must reflect what "
+        "they actually decided, not your original inclination. Never call "
+        "submit_judgment before this confirming question has been asked and "
+        "answered -- there is no zero-question path through this tool loop.\n\n"
         f"=== Task ===\n{question}\n\n"
         f"=== Discussion So Far ===\n{transcript}"
     )
