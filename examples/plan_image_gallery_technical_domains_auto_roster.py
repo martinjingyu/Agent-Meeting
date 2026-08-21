@@ -53,8 +53,8 @@ from agent_meeting.storage import load_meeting, meeting_path, new_meeting_id
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RECON_REPORT_ROOT = Path(r"C:\Users\LX034\Code\DataBase\reports-20 groups")
-RECON_REPORT_FILES = ["report_1.md", "report_2.md", "report_3.md"]
+TASK_SPEC_PATH = REPO_ROOT / "00_IMAGE_GALLERY_TASK_Compressed.md"
+INVESTIGATION_REPORT_PATH = REPO_ROOT / "investigation_report_standlone.md"
 
 # Names already spoken for by fixed (non-domain) participants -- the role architect
 # doesn't know about them, so its output is checked against this set rather than
@@ -84,67 +84,11 @@ def _load_roster(meeting_id: str) -> list[DomainRole]:
     return [DomainRole(name=e["name"], domain_brief=e["domain_brief"]) for e in payload]
 
 
-PARTICIPANT_TASK_SPEC = """\
-Input and objective:
-
-- Input root directory is `C:\\pics`.
-- Each first-level subdirectory under the root represents an independent image dataset; internal structure, format,
-  count, and naming conventions cannot be assumed.
-- The goal is to automatically select up to 100 real-world photographic images per dataset that are suitable for a
-  fixed-height horizontal carousel.
-- If fewer than 100 images genuinely qualify, output the actual count; do not pad the result with low-quality,
-  non-real, harmful, duplicate, or display-unsuitable images.
-
-The final result should jointly consider:
-
-- Credibility as a real-world captured scene;
-- Technical image quality, subject clarity, composition, and public display value;
-- Magnification ratio, rendered width, viewport share, and aspect fit under the fixed-height carousel;
-- Diversity of scene, subject, viewpoint, color, and composition;
-- Exact duplicates, near duplicates, same-scene and highly similar content;
-- Avoiding single-person close-ups or any one person/scene dominating the final result;
-- Obvious webpages, slides, logos, UI, posters, charts, CG, AI-style images, and other non-real-world content;
-- Harmful or sensitive visual content suitable for automated detection.
-
-Boundaries on information use:
-
-- Judgments of authenticity, quality, display value, and content safety may only use image pixels, decoded results,
-  and single-image geometric facts.
-- Filenames, paths, dataset names, timestamps, and non-orientation EXIF must not be used as evidence for visual
-  suitability or semantic category.
-- The above non-visual information may be used for traceability, stable ordering, caching, error logging, and pure
-  engineering management.
-- If a filename is only used to propose a candidate duplicate/family pair to be verified, the final relationship must
-  still be confirmed by visual content, and must not influence authenticity or quality judgments.
-
-Automation and evaluation boundaries:
-
-- The raw data has no human ground truth; this task must not require new human annotation, manual tuning, manual
-  approval, or manual review as a precondition for producing production results.
-- Production runs must be fully automatic. Non-blocking audit material, risk flags, and uncertainty information may
-  be output.
-- Technical validation may use deterministic facts, existing machine-readable records, programmatic/synthetic tests,
-  metamorphic tests, unsupervised stability, cross-method disagreement, published metadata, and set-level proxy
-  metrics.
-- Without reliable ground truth, do not claim measured true precision, recall, aesthetic accuracy, or content-safety
-  recall. External vision API output is a model judgment or weak reference, not ground truth.
-
-Compute and service constraints:
-
-- The locally executed model must be under 100M parameters and support Windows CPU-only; it must not depend on CUDA,
-  NVIDIA GPUs, or GPU-only inference.
-- Discussion of using an external vision API after local candidate compression, as part of the final semantic
-  evaluation, comparative ranking, or content-safety judgment, is allowed.
-- Any external API proposal must also discuss maximum candidate volume, call cost, privacy, batch/order bias,
-  auditability, version drift, and a pure-local fallback.
-
-Scope statement:
-
-- This task does not claim to automatically complete copyright, trademark, brand, portrait-rights, privacy, or legal
-  approval.
-- The meeting is responsible for the technical approach; the final Planner is responsible for synthesizing the
-  discussion into an executable engineering plan.
-"""
+# Loaded from disk (rather than inlined as a string literal, as this used to be) so
+# the task spec fed to the role architect and every participant matches whatever the
+# repo's own task-definition file currently says, with no risk of the two drifting
+# apart the way a copy-pasted duplicate eventually would.
+PARTICIPANT_TASK_SPEC = TASK_SPEC_PATH.read_text(encoding="utf-8")
 
 
 TECHNOLOGY_LANDSCAPE = """\
@@ -187,10 +131,10 @@ supplement, challenge, combine, or abandon any of these methods.
 
 
 def build_recon_guidance() -> str:
-    sections = ["\n".join([
-        "The following is the full Stage-1 reconnaissance synthesis (three combined",
-        "reports), provided inline so every participant starts from the same evidence",
-        "without needing to open any file.",
+    intro = "\n".join([
+        "The following is the full Stage-1 investigation report, provided inline so",
+        "every participant starts from the same evidence without needing to open any",
+        "file.",
         "",
         "Stage-1 material may inform corpus scale, risks, candidate experiments, runtime",
         "planning, and falsification cases. It must not become a dataset-name exception",
@@ -198,11 +142,9 @@ def build_recon_guidance() -> str:
         "",
         "Previously verified facts below may be reused directly. Architecture ideas may",
         "still be proposed as hypotheses when their evidence status is clear.",
-    ])]
-    for filename in RECON_REPORT_FILES:
-        text = (RECON_REPORT_ROOT / filename).read_text(encoding="utf-8")
-        sections.append(f"--- {filename} ---\n{text.strip()}")
-    return "\n\n".join(sections)
+    ])
+    text = INVESTIGATION_REPORT_PATH.read_text(encoding="utf-8")
+    return f"{intro}\n\n--- {INVESTIGATION_REPORT_PATH.name} ---\n{text.strip()}"
 
 
 MEETING_INSTRUCTIONS = """\
@@ -580,7 +522,7 @@ def main() -> None:
             task_spec=PARTICIPANT_TASK_SPEC,
             meeting_id=meeting_id,
             technology_reference=TECHNOLOGY_LANDSCAPE,
-            evidence_paths=[RECON_REPORT_ROOT / filename for filename in RECON_REPORT_FILES],
+            evidence_paths=[INVESTIGATION_REPORT_PATH],
         )
         for role in roster:
             if role.name in _RESERVED_NAMES:
